@@ -1,165 +1,135 @@
---// Vehicle Grab & Throw - LocalScript
---// Coloque em: StarterPlayer > StarterPlayerScripts
---// Requer: ReplicatedStorage > Rayfield (ModuleScript)
+--========================================================
+-- VEHICLE THROW UI
+-- 100% LOCAL SCRIPT
+-- PC: Y = Grab / Throw
+-- Mobile: GRAB + THROW
+--========================================================
 
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
-local CollectionService = game:GetService("CollectionService")
+local TweenService = game:GetService("TweenService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
---// CONFIG
-local GRAB_DISTANCE = 22
-local THROW_POWER = 150
-local THROW_UP_POWER = 35
+--========================================================
+-- CONFIG
+--========================================================
 
---// RAYFIELD
-local Rayfield = require(ReplicatedStorage:WaitForChild("Rayfield"))
+local GrabDistance = 25
+local ThrowPower = 150
+local ThrowUpPower = 30
 
-local Window = Rayfield:CreateWindow({
-	Name = "Vehicle Throw",
-	LoadingTitle = "Vehicle System",
-	LoadingSubtitle = "Rayfield",
-	ConfigurationSaving = {
-		Enabled = false
-	},
-	KeySystem = false
-})
-
-local VehicleTab = Window:CreateTab("Vehicle", 4483362458)
-
-VehicleTab:CreateSection("Vehicle Throw")
-
---// VARIABLES
 local HeldVehicle = nil
 local HoldWeld = nil
-local SavedParts = {}
 
-local MobileGui
-local GrabButton
-local ThrowButton
+local SavedVehicleParts = {}
 
---// CHARACTER
-local function getCharacter()
+--========================================================
+-- CHARACTER
+--========================================================
+
+local function GetCharacter()
 	return Player.Character or Player.CharacterAdded:Wait()
 end
 
-local function getRoot()
-	local Character = getCharacter()
+local function GetRoot()
+	local Character = GetCharacter()
 	return Character:FindFirstChild("HumanoidRootPart")
 end
 
-local function getHand()
-	local Character = getCharacter()
+local function GetHand()
+	local Character = GetCharacter()
 
 	return Character:FindFirstChild("RightHand")
 		or Character:FindFirstChild("Right Arm")
 		or Character:FindFirstChild("HumanoidRootPart")
 end
 
---// NOTIFICATION
-local function notify(title, content)
-	pcall(function()
-		Rayfield:Notify({
-			Title = title,
-			Content = content,
-			Duration = 3
-		})
-	end)
-end
+--========================================================
+-- VEHICLE SYSTEM
+--========================================================
 
---// VEHICLE ROOT
-local function getVehicleRoot(Model)
-	if not Model then
+local function GetVehicleRoot(Vehicle)
+
+	if not Vehicle then
 		return nil
 	end
 
-	if Model.PrimaryPart then
-		return Model.PrimaryPart
+	if Vehicle.PrimaryPart then
+		return Vehicle.PrimaryPart
 	end
 
-	local Seat = Model:FindFirstChildWhichIsA("VehicleSeat", true)
+	local VehicleSeat =
+		Vehicle:FindFirstChildWhichIsA("VehicleSeat", true)
 
-	if Seat then
-		return Seat
+	if VehicleSeat then
+		return VehicleSeat
 	end
 
-	return Model:FindFirstChildWhichIsA("BasePart", true)
+	return Vehicle:FindFirstChildWhichIsA("BasePart", true)
 end
 
---// CHECK IF MODEL IS VEHICLE
-local function isVehicle(Model)
+local function IsVehicle(Model)
+
 	if not Model:IsA("Model") then
 		return false
 	end
 
-	if CollectionService:HasTag(Model, "ThrowableVehicle") then
-		return true
-	end
-
-	if Model:FindFirstChildWhichIsA("VehicleSeat", true) then
-		return true
-	end
-
-	return false
+	return Model:FindFirstChildWhichIsA(
+		"VehicleSeat",
+		true
+	) ~= nil
 end
 
---// FIND NEAREST VEHICLE
-local function findNearestVehicle()
-	local Root = getRoot()
+local function FindNearestVehicle()
+
+	local Root = GetRoot()
 
 	if not Root then
 		return nil
 	end
 
-	local Nearest = nil
-	local NearestDistance = GRAB_DISTANCE
+	local NearestVehicle = nil
+	local NearestDistance = GrabDistance
 
-	for _, Object in ipairs(workspace:GetDescendants()) do
-		if Object:IsA("Model") and isVehicle(Object) then
+	for _, Object in ipairs(workspace:GetChildren()) do
 
-			-- Não selecionar modelos dentro de outro veículo
-			local ParentVehicle = false
+		if IsVehicle(Object) then
 
-			local Parent = Object.Parent
+			local VehicleRoot = GetVehicleRoot(Object)
 
-			while Parent and Parent ~= workspace do
-				if Parent:IsA("Model") and isVehicle(Parent) then
-					ParentVehicle = true
-					break
-				end
+			if VehicleRoot and not VehicleRoot.Anchored then
 
-				Parent = Parent.Parent
-			end
+				local Distance =
+					(Root.Position - VehicleRoot.Position).Magnitude
 
-			if not ParentVehicle then
-				local VehicleRoot = getVehicleRoot(Object)
+				if Distance < NearestDistance then
 
-				if VehicleRoot then
-					local Distance = (Root.Position - VehicleRoot.Position).Magnitude
+					NearestDistance = Distance
+					NearestVehicle = Object
 
-					if Distance < NearestDistance then
-						NearestDistance = Distance
-						Nearest = Object
-					end
 				end
 			end
 		end
 	end
 
-	return Nearest
+	return NearestVehicle
 end
 
---// PREPARE VEHICLE
-local function prepareVehicle(Vehicle)
-	SavedParts = {}
+--========================================================
+-- PREPARE VEHICLE
+--========================================================
+
+local function PrepareVehicle(Vehicle)
+
+	SavedVehicleParts = {}
 
 	for _, Object in ipairs(Vehicle:GetDescendants()) do
+
 		if Object:IsA("BasePart") then
 
-			SavedParts[Object] = {
+			SavedVehicleParts[Object] = {
 				CanCollide = Object.CanCollide,
 				Massless = Object.Massless
 			}
@@ -170,100 +140,95 @@ local function prepareVehicle(Vehicle)
 	end
 end
 
---// RESTORE VEHICLE
-local function restoreVehicle()
-	for Part, Properties in pairs(SavedParts) do
+local function RestoreVehicle()
+
+	for Part, Data in pairs(SavedVehicleParts) do
+
 		if Part and Part.Parent then
-			Part.CanCollide = Properties.CanCollide
-			Part.Massless = Properties.Massless
+
+			Part.CanCollide = Data.CanCollide
+			Part.Massless = Data.Massless
+
 		end
 	end
 
-	SavedParts = {}
+	SavedVehicleParts = {}
 end
 
---// GRAB
-local function grabVehicle()
+--========================================================
+-- GRAB
+--========================================================
+
+local function GrabVehicle()
+
 	if HeldVehicle then
-		notify("Vehicle Throw", "Você já está segurando um veículo.")
 		return
 	end
 
-	local Vehicle = findNearestVehicle()
+	local Vehicle = FindNearestVehicle()
 
 	if not Vehicle then
-		notify(
-			"Nenhum veículo",
-			"Chegue mais perto de um veículo."
-		)
-
+		warn("Nenhum veículo próximo.")
 		return
 	end
 
-	local VehicleRoot = getVehicleRoot(Vehicle)
-	local Hand = getHand()
+	local VehicleRoot = GetVehicleRoot(Vehicle)
+	local Hand = GetHand()
 
 	if not VehicleRoot or not Hand then
 		return
 	end
 
-	if VehicleRoot.Anchored then
-		notify(
-			"Vehicle Throw",
-			"Esse veículo está Anchored."
-		)
-
-		return
-	end
-
-	prepareVehicle(Vehicle)
-
-	HeldVehicle = Vehicle
-
-	--// Posiciona o veículo na mão
-	local HoldCFrame =
-		Hand.CFrame
-		* CFrame.new(0, -1.5, -4)
-		* CFrame.Angles(0, math.rad(90), 0)
-
-	Vehicle:PivotTo(HoldCFrame)
-
-	--// Prende na mão
-	HoldWeld = Instance.new("WeldConstraint")
-	HoldWeld.Name = "VehicleHoldWeld"
-	HoldWeld.Part0 = Hand
-	HoldWeld.Part1 = VehicleRoot
-	HoldWeld.Parent = VehicleRoot
+	PrepareVehicle(Vehicle)
 
 	VehicleRoot.AssemblyLinearVelocity = Vector3.zero
 	VehicleRoot.AssemblyAngularVelocity = Vector3.zero
 
-	notify(
-		"Vehicle Grabbed",
-		"Pressione Y novamente para arremessar."
-	)
-end
-
---// THROW
-local function throwVehicle()
-	if not HeldVehicle then
-		notify(
-			"Vehicle Throw",
-			"Você não está segurando nenhum veículo."
+	-- posição na frente/do lado da mão
+	local HoldPosition =
+		Hand.CFrame
+		* CFrame.new(0, -1, -5)
+		* CFrame.Angles(
+			0,
+			math.rad(90),
+			0
 		)
 
+	Vehicle:PivotTo(HoldPosition)
+
+	HoldWeld = Instance.new("WeldConstraint")
+
+	HoldWeld.Name = "VehicleGrabWeld"
+
+	HoldWeld.Part0 = Hand
+	HoldWeld.Part1 = VehicleRoot
+
+	HoldWeld.Parent = VehicleRoot
+
+	HeldVehicle = Vehicle
+end
+
+--========================================================
+-- THROW
+--========================================================
+
+local function ThrowVehicle()
+
+	if not HeldVehicle then
 		return
 	end
 
 	local Vehicle = HeldVehicle
-	local VehicleRoot = getVehicleRoot(Vehicle)
+	local VehicleRoot = GetVehicleRoot(Vehicle)
 
 	if HoldWeld then
+
 		HoldWeld:Destroy()
 		HoldWeld = nil
+
 	end
 
-	restoreVehicle()
+	RestoreVehicle()
 
 	if VehicleRoot then
 
@@ -272,38 +237,37 @@ local function throwVehicle()
 		local Direction = Camera.CFrame.LookVector
 
 		VehicleRoot.AssemblyLinearVelocity =
-			(Direction * THROW_POWER)
-			+ Vector3.new(0, THROW_UP_POWER, 0)
+			Direction * ThrowPower
+			+ Vector3.new(
+				0,
+				ThrowUpPower,
+				0
+			)
 
-		-- rotação durante o arremesso
 		VehicleRoot.AssemblyAngularVelocity =
 			Vector3.new(
+				math.random(-6, 6),
 				math.random(-8, 8),
-				math.random(-10, 10),
-				math.random(-8, 8)
+				math.random(-6, 6)
 			)
+
 	end
 
 	HeldVehicle = nil
-
-	notify(
-		"Vehicle Throw",
-		"Veículo arremessado!"
-	)
 end
 
---// MAIN ACTION
-local function grabOrThrow()
+local function GrabOrThrow()
+
 	if HeldVehicle then
-		throwVehicle()
+		ThrowVehicle()
 	else
-		grabVehicle()
+		GrabVehicle()
 	end
 end
 
---==================================================
--- PC CONTROL
---==================================================
+--========================================================
+-- PC KEY
+--========================================================
 
 UserInputService.InputBegan:Connect(function(Input, Processed)
 
@@ -312,144 +276,926 @@ UserInputService.InputBegan:Connect(function(Input, Processed)
 	end
 
 	if Input.KeyCode == Enum.KeyCode.Y then
-		grabOrThrow()
+
+		GrabOrThrow()
+
 	end
+end)
+
+--========================================================
+-- MAIN GUI
+--========================================================
+
+local Gui = Instance.new("ScreenGui")
+
+Gui.Name = "VehicleThrowUI"
+Gui.ResetOnSpawn = false
+Gui.IgnoreGuiInset = false
+
+Gui.Parent = PlayerGui
+
+--========================================================
+-- WINDOW
+--========================================================
+
+local Main = Instance.new("Frame")
+
+Main.Size = UDim2.fromOffset(430, 310)
+
+Main.Position =
+	UDim2.new(
+		0.5,
+		-215,
+		0.5,
+		-155
+	)
+
+Main.BackgroundColor3 =
+	Color3.fromRGB(18, 18, 24)
+
+Main.BorderSizePixel = 0
+
+Main.Parent = Gui
+
+local MainCorner = Instance.new("UICorner")
+
+MainCorner.CornerRadius =
+	UDim.new(0, 12)
+
+MainCorner.Parent = Main
+
+local MainStroke = Instance.new("UIStroke")
+
+MainStroke.Color =
+	Color3.fromRGB(80, 80, 100)
+
+MainStroke.Transparency = 0.5
+MainStroke.Thickness = 1
+
+MainStroke.Parent = Main
+
+--========================================================
+-- TOP BAR
+--========================================================
+
+local TopBar = Instance.new("Frame")
+
+TopBar.Size =
+	UDim2.new(
+		1,
+		0,
+		0,
+		55
+	)
+
+TopBar.BackgroundColor3 =
+	Color3.fromRGB(23, 23, 31)
+
+TopBar.BorderSizePixel = 0
+
+TopBar.Parent = Main
+
+local TopCorner = Instance.new("UICorner")
+
+TopCorner.CornerRadius =
+	UDim.new(0, 12)
+
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+
+Title.Size =
+	UDim2.new(
+		1,
+		-70,
+		1,
+		0
+	)
+
+Title.Position =
+	UDim2.fromOffset(
+		20,
+		0
+	)
+
+Title.BackgroundTransparency = 1
+
+Title.Text = "Vehicle Throw"
+
+Title.TextColor3 =
+	Color3.fromRGB(
+		240,
+		240,
+		245
+	)
+
+Title.TextSize = 20
+
+Title.Font =
+	Enum.Font.GothamBold
+
+Title.TextXAlignment =
+	Enum.TextXAlignment.Left
+
+Title.Parent = TopBar
+
+--========================================================
+-- MINIMIZE
+--========================================================
+
+local Minimize = Instance.new("TextButton")
+
+Minimize.Size =
+	UDim2.fromOffset(
+		38,
+		38
+	)
+
+Minimize.Position =
+	UDim2.new(
+		1,
+		-48,
+		0,
+		8
+	)
+
+Minimize.BackgroundColor3 =
+	Color3.fromRGB(
+		33,
+		33,
+		44
+	)
+
+Minimize.Text = "—"
+
+Minimize.TextColor3 = Color3.new(1,1,1)
+
+Minimize.TextSize = 20
+
+Minimize.Font =
+	Enum.Font.GothamBold
+
+Minimize.Parent = TopBar
+
+local MinCorner = Instance.new("UICorner")
+
+MinCorner.CornerRadius =
+	UDim.new(
+		0,
+		8
+	)
+
+MinCorner.Parent = Minimize
+
+local Minimized = false
+
+Minimize.MouseButton1Click:Connect(function()
+
+	Minimized = not Minimized
+
+	if Minimized then
+
+		TweenService:Create(
+			Main,
+			TweenInfo.new(0.25),
+			{
+				Size = UDim2.fromOffset(
+					430,
+					55
+				)
+			}
+		):Play()
+
+	else
+
+		TweenService:Create(
+			Main,
+			TweenInfo.new(0.25),
+			{
+				Size = UDim2.fromOffset(
+					430,
+					310
+				)
+			}
+		):Play()
+
+	end
+end)
+
+--========================================================
+-- DRAGGING
+--========================================================
+
+local Dragging = false
+local DragStart
+local StartPosition
+
+TopBar.InputBegan:Connect(function(Input)
+
+	if Input.UserInputType ==
+		Enum.UserInputType.MouseButton1
+		or
+		Input.UserInputType ==
+		Enum.UserInputType.Touch
+	then
+
+		Dragging = true
+
+		DragStart = Input.Position
+		StartPosition = Main.Position
+
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(Input)
+
+	if not Dragging then
+		return
+	end
+
+	if Input.UserInputType ==
+		Enum.UserInputType.MouseMovement
+		or
+		Input.UserInputType ==
+		Enum.UserInputType.Touch
+	then
+
+		local Delta =
+			Input.Position - DragStart
+
+		Main.Position =
+			UDim2.new(
+				StartPosition.X.Scale,
+				StartPosition.X.Offset + Delta.X,
+
+				StartPosition.Y.Scale,
+				StartPosition.Y.Offset + Delta.Y
+			)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(Input)
+
+	if Input.UserInputType ==
+		Enum.UserInputType.MouseButton1
+		or
+		Input.UserInputType ==
+		Enum.UserInputType.Touch
+	then
+
+		Dragging = false
+	end
+end)
+
+--========================================================
+-- CONTENT
+--========================================================
+
+local Content = Instance.new("Frame")
+
+Content.Position =
+	UDim2.fromOffset(
+		15,
+		65
+	)
+
+Content.Size =
+	UDim2.new(
+		1,
+		-30,
+		1,
+		-75
+	)
+
+Content.BackgroundTransparency = 1
+
+Content.Parent = Main
+
+--========================================================
+-- MAIN BUTTON
+--========================================================
+
+local ActionButton = Instance.new("TextButton")
+
+ActionButton.Size =
+	UDim2.new(
+		1,
+		0,
+		0,
+		50
+	)
+
+ActionButton.BackgroundColor3 =
+	Color3.fromRGB(
+		35,
+		35,
+		47
+	)
+
+ActionButton.Text =
+	"Grab / Throw Vehicle  [Y]"
+
+ActionButton.TextColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
+
+ActionButton.TextSize = 15
+
+ActionButton.Font =
+	Enum.Font.GothamSemibold
+
+ActionButton.Parent = Content
+
+local ActionCorner =
+	Instance.new("UICorner")
+
+ActionCorner.CornerRadius =
+	UDim.new(
+		0,
+		9
+	)
+
+ActionCorner.Parent =
+	ActionButton
+
+ActionButton.MouseButton1Click:Connect(function()
+
+	GrabOrThrow()
 
 end)
 
---==================================================
--- MOBILE GUI
---==================================================
+--========================================================
+-- MOBILE TOGGLE
+--========================================================
 
-MobileGui = Instance.new("ScreenGui")
-MobileGui.Name = "VehicleThrowMobile"
-MobileGui.ResetOnSpawn = false
-MobileGui.IgnoreGuiInset = true
-MobileGui.Parent = PlayerGui
+local ToggleFrame = Instance.new("Frame")
 
---// GRAB BUTTON
-GrabButton = Instance.new("TextButton")
-GrabButton.Name = "GrabButton"
-GrabButton.Size = UDim2.fromOffset(125, 52)
-GrabButton.Position = UDim2.new(
-	1,
-	-285,
-	1,
-	-120
-)
+ToggleFrame.Position =
+	UDim2.fromOffset(
+		0,
+		65
+	)
 
-GrabButton.AnchorPoint = Vector2.new(0, 0)
-GrabButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-GrabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleFrame.Size =
+	UDim2.new(
+		1,
+		0,
+		0,
+		50
+	)
+
+ToggleFrame.BackgroundColor3 =
+	Color3.fromRGB(
+		28,
+		28,
+		38
+	)
+
+ToggleFrame.Parent = Content
+
+local ToggleCorner =
+	Instance.new("UICorner")
+
+ToggleCorner.CornerRadius =
+	UDim.new(
+		0,
+		9
+	)
+
+ToggleCorner.Parent =
+	ToggleFrame
+
+local ToggleText =
+	Instance.new("TextLabel")
+
+ToggleText.Size =
+	UDim2.new(
+		1,
+		-80,
+		1,
+		0
+	)
+
+ToggleText.Position =
+	UDim2.fromOffset(
+		15,
+		0
+	)
+
+ToggleText.BackgroundTransparency = 1
+
+ToggleText.Text =
+	"Show Mobile Buttons"
+
+ToggleText.TextColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
+
+ToggleText.Font =
+	Enum.Font.Gotham
+
+ToggleText.TextSize = 14
+
+ToggleText.TextXAlignment =
+	Enum.TextXAlignment.Left
+
+ToggleText.Parent =
+	ToggleFrame
+
+local Toggle =
+	Instance.new("TextButton")
+
+Toggle.Size =
+	UDim2.fromOffset(
+		48,
+		26
+	)
+
+Toggle.Position =
+	UDim2.new(
+		1,
+		-60,
+		0.5,
+		-13
+	)
+
+Toggle.Text = ""
+
+Toggle.Parent =
+	ToggleFrame
+
+local ToggleCorner2 =
+	Instance.new("UICorner")
+
+ToggleCorner2.CornerRadius =
+	UDim.new(
+		1,
+		0
+	)
+
+ToggleCorner2.Parent =
+	Toggle
+
+local ToggleDot =
+	Instance.new("Frame")
+
+ToggleDot.Size =
+	UDim2.fromOffset(
+		20,
+		20
+	)
+
+ToggleDot.Position =
+	UDim2.fromOffset(
+		3,
+		3
+	)
+
+ToggleDot.BackgroundColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
+
+ToggleDot.Parent = Toggle
+
+local DotCorner =
+	Instance.new("UICorner")
+
+DotCorner.CornerRadius =
+	UDim.new(
+		1,
+		0
+	)
+
+DotCorner.Parent =
+	ToggleDot
+
+--========================================================
+-- MOBILE BUTTON GUI
+--========================================================
+
+local MobileFrame =
+	Instance.new("Frame")
+
+MobileFrame.Size =
+	UDim2.fromOffset(
+		280,
+		65
+	)
+
+MobileFrame.Position =
+	UDim2.new(
+		0.5,
+		-140,
+		1,
+		-100
+	)
+
+MobileFrame.BackgroundTransparency = 1
+
+MobileFrame.Parent = Gui
+
+local GrabButton =
+	Instance.new("TextButton")
+
+GrabButton.Size =
+	UDim2.fromOffset(
+		130,
+		55
+	)
+
+GrabButton.BackgroundColor3 =
+	Color3.fromRGB(
+		25,
+		25,
+		35
+	)
+
 GrabButton.Text = "GRAB"
-GrabButton.TextSize = 19
-GrabButton.Font = Enum.Font.GothamBold
-GrabButton.Parent = MobileGui
 
-local GrabCorner = Instance.new("UICorner")
-GrabCorner.CornerRadius = UDim.new(0, 13)
-GrabCorner.Parent = GrabButton
+GrabButton.TextColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
 
-local GrabStroke = Instance.new("UIStroke")
-GrabStroke.Thickness = 2
-GrabStroke.Transparency = 0.25
-GrabStroke.Parent = GrabButton
+GrabButton.TextSize = 16
 
---// THROW BUTTON
-ThrowButton = Instance.new("TextButton")
-ThrowButton.Name = "ThrowButton"
-ThrowButton.Size = UDim2.fromOffset(125, 52)
-ThrowButton.Position = UDim2.new(
-	1,
-	-150,
-	1,
-	-120
+GrabButton.Font =
+	Enum.Font.GothamBold
+
+GrabButton.Parent =
+	MobileFrame
+
+local GrabCorner =
+	Instance.new("UICorner")
+
+GrabCorner.CornerRadius =
+	UDim.new(
+		0,
+		12
+	)
+
+GrabCorner.Parent =
+	GrabButton
+
+local ThrowButton =
+	Instance.new("TextButton")
+
+ThrowButton.Size =
+	UDim2.fromOffset(
+		130,
+		55
+	)
+
+ThrowButton.Position =
+	UDim2.fromOffset(
+		150,
+		0
+	)
+
+ThrowButton.BackgroundColor3 =
+	Color3.fromRGB(
+		25,
+		25,
+		35
+	)
+
+ThrowButton.Text = "THROW"
+
+ThrowButton.TextColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
+
+ThrowButton.TextSize = 16
+
+ThrowButton.Font =
+	Enum.Font.GothamBold
+
+ThrowButton.Parent =
+	MobileFrame
+
+local ThrowCorner =
+	Instance.new("UICorner")
+
+ThrowCorner.CornerRadius =
+	UDim.new(
+		0,
+		12
+	)
+
+ThrowCorner.Parent =
+	ThrowButton
+
+GrabButton.MouseButton1Click:Connect(
+	function()
+
+		GrabVehicle()
+
+	end
 )
 
-ThrowButton.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-ThrowButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ThrowButton.Text = "THROW"
-ThrowButton.TextSize = 19
-ThrowButton.Font = Enum.Font.GothamBold
-ThrowButton.Parent = MobileGui
+ThrowButton.MouseButton1Click:Connect(
+	function()
 
-local ThrowCorner = Instance.new("UICorner")
-ThrowCorner.CornerRadius = UDim.new(0, 13)
-ThrowCorner.Parent = ThrowButton
+		ThrowVehicle()
 
-local ThrowStroke = Instance.new("UIStroke")
-ThrowStroke.Thickness = 2
-ThrowStroke.Transparency = 0.25
-ThrowStroke.Parent = ThrowButton
+	end
+)
 
---// MOBILE ACTIONS
-GrabButton.MouseButton1Click:Connect(function()
-	grabVehicle()
+--========================================================
+-- TOGGLE LOGIC
+--========================================================
+
+local MobileEnabled =
+	UserInputService.TouchEnabled
+
+local function UpdateToggle()
+
+	MobileFrame.Visible =
+		MobileEnabled
+
+	if MobileEnabled then
+
+		Toggle.BackgroundColor3 =
+			Color3.fromRGB(
+				80,
+				100,
+				255
+			)
+
+		TweenService:Create(
+			ToggleDot,
+			TweenInfo.new(0.15),
+			{
+				Position =
+					UDim2.fromOffset(
+						25,
+						3
+					)
+			}
+		):Play()
+
+	else
+
+		Toggle.BackgroundColor3 =
+			Color3.fromRGB(
+				55,
+				55,
+				65
+			)
+
+		TweenService:Create(
+			ToggleDot,
+			TweenInfo.new(0.15),
+			{
+				Position =
+					UDim2.fromOffset(
+						3,
+						3
+					)
+			}
+		):Play()
+
+	end
+end
+
+Toggle.MouseButton1Click:Connect(function()
+
+	MobileEnabled =
+		not MobileEnabled
+
+	UpdateToggle()
+
 end)
 
-ThrowButton.MouseButton1Click:Connect(function()
-	throwVehicle()
-end)
+UpdateToggle()
 
--- padrão
-MobileGui.Enabled = UserInputService.TouchEnabled
+--========================================================
+-- THROW POWER SLIDER
+--========================================================
 
---==================================================
--- RAYFIELD OPTIONS
---==================================================
+local SliderLabel =
+	Instance.new("TextLabel")
 
-VehicleTab:CreateButton({
-	Name = "Grab / Throw Vehicle [Y]",
+SliderLabel.Position =
+	UDim2.fromOffset(
+		5,
+		135
+	)
 
-	Callback = function()
-		grabOrThrow()
-	end
-})
+SliderLabel.Size =
+	UDim2.new(
+		1,
+		-10,
+		0,
+		30
+	)
 
-VehicleTab:CreateToggle({
-	Name = "Show Mobile Buttons",
+SliderLabel.BackgroundTransparency = 1
 
-	CurrentValue = UserInputService.TouchEnabled,
+SliderLabel.Text =
+	"Throw Power: "
+	.. ThrowPower
 
-	Flag = "MobileVehicleButtons",
+SliderLabel.TextColor3 =
+	Color3.new(
+		1,
+		1,
+		1
+	)
 
-	Callback = function(Value)
-		MobileGui.Enabled = Value
-	end
-})
+SliderLabel.TextSize = 14
 
-VehicleTab:CreateSection("Throw Settings")
+SliderLabel.Font =
+	Enum.Font.Gotham
 
-VehicleTab:CreateSlider({
-	Name = "Throw Power",
+SliderLabel.TextXAlignment =
+	Enum.TextXAlignment.Left
 
-	Range = {
+SliderLabel.Parent =
+	Content
+
+local Slider =
+	Instance.new("Frame")
+
+Slider.Position =
+	UDim2.fromOffset(
+		5,
+		175
+	)
+
+Slider.Size =
+	UDim2.new(
+		1,
+		-10,
+		0,
+		8
+	)
+
+Slider.BackgroundColor3 =
+	Color3.fromRGB(
 		50,
-		300
-	},
+		50,
+		60
+	)
 
-	Increment = 10,
+Slider.Parent = Content
 
-	Suffix = " Power",
+local SliderCorner =
+	Instance.new("UICorner")
 
-	CurrentValue = THROW_POWER,
+SliderCorner.CornerRadius =
+	UDim.new(
+		1,
+		0
+	)
 
-	Flag = "VehicleThrowPower",
+SliderCorner.Parent =
+	Slider
 
-	Callback = function(Value)
-		THROW_POWER = Value
+local Fill =
+	Instance.new("Frame")
+
+Fill.Size =
+	UDim2.new(
+		0.4,
+		0,
+		1,
+		0
+	)
+
+Fill.BackgroundColor3 =
+	Color3.fromRGB(
+		90,
+		110,
+		255
+	)
+
+Fill.Parent = Slider
+
+local FillCorner =
+	Instance.new("UICorner")
+
+FillCorner.CornerRadius =
+	UDim.new(
+		1,
+		0
+	)
+
+FillCorner.Parent = Fill
+
+local SliderDragging = false
+
+local function UpdateSlider(Input)
+
+	local Percent =
+		math.clamp(
+			(
+				Input.Position.X
+				-
+				Slider.AbsolutePosition.X
+			)
+			/
+			Slider.AbsoluteSize.X,
+
+			0,
+			1
+		)
+
+	ThrowPower =
+		math.floor(
+			50
+			+
+			Percent * 250
+		)
+
+	Fill.Size =
+		UDim2.new(
+			Percent,
+			0,
+			1,
+			0
+		)
+
+	SliderLabel.Text =
+		"Throw Power: "
+		.. ThrowPower
+end
+
+Slider.InputBegan:Connect(function(Input)
+
+	if Input.UserInputType ==
+		Enum.UserInputType.MouseButton1
+		or
+		Input.UserInputType ==
+		Enum.UserInputType.Touch
+	then
+
+		SliderDragging = true
+		UpdateSlider(Input)
+
 	end
-})
+end)
 
---// RESET IF CHARACTER DIES
+UserInputService.InputChanged:Connect(function(Input)
+
+	if SliderDragging then
+
+		if Input.UserInputType ==
+			Enum.UserInputType.MouseMovement
+			or
+			Input.UserInputType ==
+			Enum.UserInputType.Touch
+		then
+
+			UpdateSlider(Input)
+
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(Input)
+
+	if Input.UserInputType ==
+		Enum.UserInputType.MouseButton1
+		or
+		Input.UserInputType ==
+		Enum.UserInputType.Touch
+	then
+
+		SliderDragging = false
+
+	end
+end)
+
+--========================================================
+-- RESPAWN
+--========================================================
+
 Player.CharacterAdded:Connect(function()
 
 	if HoldWeld then
+
 		HoldWeld:Destroy()
+		HoldWeld = nil
+
 	end
 
-	HoldWeld = nil
+	RestoreVehicle()
+
 	HeldVehicle = nil
-	SavedParts = {}
 
 end)
