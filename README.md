@@ -1,14 +1,17 @@
--- Souza Hub - Script Completo para Murder Mystery 2 (Atualizado)
+-- Souza Hub - MM2 Atualizado
 -- Feito por Souza | Suporte: discord.gg/souza
 
 --[[
-    Instruções:
-    - Executar em um exploit compatível com loadstring e game:HttpGet.
-    - Aguardar carregamento completo.
-    - Algumas funções dependem da estrutura do jogo; se necessário, ajuste os nomes de pastas.
+    INSTRUÇÕES:
+    1. Execute em qualquer exploit compatível (Synapse X, Script-Ware, Krnl, Fluxus, etc.)
+    2. Aguarde o carregamento.
+    3. Use a interface para ativar as funções.
+
+    OBS: Algumas funções dependem da estrutura do jogo. Se algo não funcionar,
+    verifique o console (F9) e ajuste os nomes das pastas/objetos conforme necessário.
 ]]
 
--- ================= SERVIÇOS =================
+-- Serviços
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
@@ -17,12 +20,11 @@ local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
 local Lighting = game:GetService("Lighting")
-local StarterGui = game:GetService("StarterGui")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local StarterGui = game:GetService("StarterGui")
 
--- ================= CONFIGURAÇÕES =================
+-- Configurações
 local Settings = {
-    -- Combat
     Aimbot = false,
     SilentAim = false,
     AimLock = false,
@@ -39,7 +41,6 @@ local Settings = {
     GunPrediction = false,
     AutoPickupGun = false,
     InstantGunPickup = false,
-    -- ESP
     PlayerESP = false,
     NameESP = false,
     DistanceESP = false,
@@ -53,7 +54,6 @@ local Settings = {
     GunESP = false,
     RoleColors = false,
     RoleChams = false,
-    -- Detection
     DetectMurderer = false,
     DetectSheriff = false,
     DetectHero = false,
@@ -61,7 +61,6 @@ local Settings = {
     MurdererAlert = false,
     SheriffAlert = false,
     ShowGunPickup = false,
-    -- Movement
     WalkSpeed = 16,
     JumpPower = 50,
     InfiniteJump = false,
@@ -72,7 +71,6 @@ local Settings = {
     Spin = false,
     BunnyHop = false,
     AntiVoid = false,
-    -- Farm
     AutoFarmCoins = false,
     AutoCollectCoins = false,
     AutoFarmCandy = false,
@@ -81,7 +79,6 @@ local Settings = {
     AutoFarmWins = false,
     AutoRejoin = false,
     ServerHop = false,
-    -- Survival
     AutoDodge = false,
     AutoEscapeMurderer = false,
     AntiKnife = false,
@@ -90,7 +87,6 @@ local Settings = {
     AntiAFK = false,
     AutoReset = false,
     SafeSpot = false,
-    -- Visual
     Fullbright = false,
     RemoveFog = false,
     XRay = false,
@@ -100,29 +96,24 @@ local Settings = {
     Crosshair = false,
     CustomFOV = 70,
     NightVision = false,
-    -- Player
     Spectate = false,
     View = false,
     Follow = false,
     Orbit = false,
     FreezeLocal = false,
     FreezeVisual = false,
-    -- Gun
     GunDropESP = false,
     AutoGrabGun = false,
     GunAimAssist = false,
     GunPrediction2 = false,
-    -- Knife
     ThrowPrediction = false,
     AutoThrow = false,
     KnifeTarget = nil,
-    -- Mobile
     AimButton = false,
     ShootButton = false,
     ThrowKnifeButton = false,
     FlyControls = false,
     TPButton = false,
-    -- Misc
     AntiAFK2 = false,
     FPSBoost = false,
     RemoveTextures = false,
@@ -133,22 +124,29 @@ local Settings = {
     FakeKnife = false
 }
 
--- ================= FUNÇÕES AUXILIARES =================
+-- Funções auxiliares
 local function Notify(title, message)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
+    StarterGui:SetCore("SendNotification", {
         Title = title,
         Text = message,
         Duration = 5
     })
 end
 
+local function getPlayerNames()
+    local names = {}
+    for _, p in ipairs(Players:GetPlayers()) do
+        table.insert(names, p.Name)
+    end
+    return names
+end
+
 local function getRole(player)
-    -- Retorna "Murderer", "Sheriff", "Hero", "Innocent" ou nil
     if not player or player == LocalPlayer then return nil end
     local char = player.Character
     if not char then return nil end
-    
-    -- Método 1: pastas no personagem
+
+    -- 1. Pastas no personagem
     if char:FindFirstChild("Murderer") or char:FindFirstChild("murderer") then
         return "Murderer"
     elseif char:FindFirstChild("Sheriff") or char:FindFirstChild("sheriff") then
@@ -156,8 +154,8 @@ local function getRole(player)
     elseif char:FindFirstChild("Hero") or char:FindFirstChild("hero") then
         return "Hero"
     end
-    
-    -- Método 2: pastas no Player
+
+    -- 2. Pastas no Player
     if player:FindFirstChild("Murderer") or player:FindFirstChild("murderer") then
         return "Murderer"
     elseif player:FindFirstChild("Sheriff") or player:FindFirstChild("sheriff") then
@@ -165,15 +163,15 @@ local function getRole(player)
     elseif player:FindFirstChild("Hero") or player:FindFirstChild("hero") then
         return "Hero"
     end
-    
-    -- Método 3: através de ferramentas (faca = murderer, arma = sheriff/hero)
+
+    -- 3. Ferramentas (faca = murderer, arma = sheriff/hero)
     local tool = char:FindFirstChildOfClass("Tool")
     if tool then
         local name = tool.Name:lower()
         if name:find("knife") or name:find("faca") then
             return "Murderer"
         elseif name:find("gun") or name:find("pistol") or name:find("revolver") then
-            -- Pode ser sheriff ou hero; checar se tem algo mais
+            -- Pode ser sheriff ou hero; tentar distinguir
             if char:FindFirstChild("Hero") or player:FindFirstChild("Hero") then
                 return "Hero"
             else
@@ -181,8 +179,8 @@ local function getRole(player)
             end
         end
     end
-    
-    -- Método 4: valores específicos (alguns scripts usam IntValue no Player)
+
+    -- 4. Valores no Player
     local roleVal = player:FindFirstChild("Role") or player:FindFirstChild("role")
     if roleVal and roleVal:IsA("StringValue") then
         local val = roleVal.Value:lower()
@@ -191,8 +189,8 @@ local function getRole(player)
         elseif val:find("hero") then return "Hero"
         end
     end
-    
-    -- Se nada detectado, é Inocente
+
+    -- 5. Se nada detectado, é Inocente
     return "Innocent"
 end
 
@@ -256,7 +254,6 @@ local function findKnife()
             return knife
         end
     end
-    -- Procurar no Backpack também
     if LocalPlayer.Backpack then
         local tool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
         if tool and (tool.Name:lower():find("knife") or tool.Name:lower():find("faca")) then
@@ -287,17 +284,13 @@ local function getPlayerByName(name)
     return Players:FindFirstChild(name)
 end
 
-local function getCharacter(player)
-    return player and player.Character
-end
-
 local function getRoot(player)
-    local char = getCharacter(player)
+    local char = player and player.Character
     return char and char:FindFirstChild("HumanoidRootPart")
 end
 
 local function getHumanoid(player)
-    local char = getCharacter(player)
+    local char = player and player.Character
     return char and char:FindFirstChildOfClass("Humanoid")
 end
 
@@ -306,17 +299,10 @@ local function fireClick()
     VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, nil, 0)
 end
 
-local function activateTool(tool)
-    if tool then
-        tool:Activate()
-    end
-end
-
 local function shootGun()
     local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
     if tool and (tool.Name:lower():find("gun") or tool.Name:lower():find("pistol") or tool.Name:lower():find("revolver")) then
         tool:Activate()
-        -- Alguns scripts precisam de clique real
         fireClick()
     end
 end
@@ -331,31 +317,19 @@ end
 
 -- ================= ESP SYSTEM =================
 local ESPObjects = {}
-local espConnections = {}
-
 local function clearESP()
     for _, obj in pairs(ESPObjects) do
-        if obj.Remove then
-            obj:Remove()
-        elseif obj.Destroy then
-            obj:Destroy()
-        end
+        if obj.Remove then obj:Remove() elseif obj.Destroy then obj:Destroy() end
     end
     table.clear(ESPObjects)
 end
 
 local function getRoleColor(role)
-    if role == "Murderer" then
-        return Color3.fromRGB(255, 0, 0)      -- Vermelho
-    elseif role == "Sheriff" then
-        return Color3.fromRGB(0, 100, 255)    -- Azul
-    elseif role == "Hero" then
-        return Color3.fromRGB(255, 215, 0)    -- Dourado
-    elseif role == "Innocent" then
-        return Color3.fromRGB(0, 255, 0)      -- Verde
-    else
-        return Color3.fromRGB(255, 255, 255)  -- Branco
-    end
+    if role == "Murderer" then return Color3.fromRGB(255, 0, 0)
+    elseif role == "Sheriff" then return Color3.fromRGB(0, 100, 255)
+    elseif role == "Hero" then return Color3.fromRGB(255, 215, 0)
+    elseif role == "Innocent" then return Color3.fromRGB(0, 255, 0)
+    else return Color3.fromRGB(255, 255, 255) end
 end
 
 local function createESP(player)
@@ -365,11 +339,10 @@ local function createESP(player)
     local root = char:FindFirstChild("HumanoidRootPart")
     local head = char:FindFirstChild("Head")
     if not root or not head then return end
-    
+
     local role = getRole(player)
     local color = getRoleColor(role)
-    
-    -- Highlight
+
     if Settings.HighlightESP then
         local highlight = Instance.new("Highlight")
         highlight.Parent = char
@@ -379,8 +352,7 @@ local function createESP(player)
         highlight.OutlineTransparency = 0.5
         table.insert(ESPObjects, highlight)
     end
-    
-    -- Box ESP
+
     if Settings.BoxESP then
         local box = Drawing.new("Square")
         box.Thickness = 2
@@ -406,8 +378,7 @@ local function createESP(player)
             box:Remove()
         end)()
     end
-    
-    -- Name ESP
+
     if Settings.NameESP then
         local name = Drawing.new("Text")
         name.Text = player.Name .. " [" .. (role or "Unknown") .. "]"
@@ -431,8 +402,7 @@ local function createESP(player)
             name:Remove()
         end)()
     end
-    
-    -- Distance ESP
+
     if Settings.DistanceESP then
         local distText = Drawing.new("Text")
         distText.Color = color
@@ -456,8 +426,7 @@ local function createESP(player)
             distText:Remove()
         end)()
     end
-    
-    -- Tracer ESP
+
     if Settings.TracerESP then
         local tracer = Drawing.new("Line")
         tracer.Color = color
@@ -481,7 +450,6 @@ local function createESP(player)
     end
 end
 
--- Atualiza ESP para todos os jogadores
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -499,7 +467,6 @@ task.spawn(function()
 end)
 
 -- ================= COMBAT LOOPS =================
--- Aimbot / Aim Lock
 task.spawn(function()
     while true do
         task.wait()
@@ -512,21 +479,15 @@ task.spawn(function()
     end
 end)
 
--- Silent Aim (simulação: apenas mantém a mira, mas não altera câmera visível)
--- Auto Shoot
 task.spawn(function()
     while true do
         task.wait(0.1)
-        if Settings.AutoShoot then
-            shootGun()
-        end
+        if Settings.AutoShoot then shootGun() end
         if Settings.AutoKillMurderer then
             local m = getMurderer()
-            if m and m.Character and m.Character:FindFirstChild("Humanoid") then
-                -- Verifica se tem arma
+            if m and m.Character and m.Character:FindFirstChild("Head") then
                 local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
                 if tool and (tool.Name:lower():find("gun") or tool.Name:lower():find("pistol")) then
-                    -- Atira no murderer
                     Camera.CFrame = CFrame.new(Camera.CFrame.Position, m.Character.Head.Position)
                     tool:Activate()
                 end
@@ -534,7 +495,7 @@ task.spawn(function()
         end
         if Settings.AutoKillSheriff then
             local s = getSheriff()
-            if s and s.Character and s.Character:FindFirstChild("Humanoid") then
+            if s and s.Character and s.Character:FindFirstChild("Head") then
                 local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
                 if tool and (tool.Name:lower():find("gun") or tool.Name:lower():find("pistol")) then
                     Camera.CFrame = CFrame.new(Camera.CFrame.Position, s.Character.Head.Position)
@@ -545,7 +506,6 @@ task.spawn(function()
     end
 end)
 
--- Kill Aura / Knife Aura
 task.spawn(function()
     while true do
         task.wait()
@@ -553,9 +513,7 @@ task.spawn(function()
             local target = getNearestPlayer(20)
             if target and target.Character and target.Character:FindFirstChild("Humanoid") then
                 local knife = findKnife()
-                if knife then
-                    knife:Activate()
-                end
+                if knife then knife:Activate() end
             end
         end
     end
@@ -565,14 +523,8 @@ end)
 local flyBodyGyro, flyBodyVelocity
 
 local function stopFly()
-    if flyBodyGyro then
-        flyBodyGyro:Destroy()
-        flyBodyGyro = nil
-    end
-    if flyBodyVelocity then
-        flyBodyVelocity:Destroy()
-        flyBodyVelocity = nil
-    end
+    if flyBodyGyro then flyBodyGyro:Destroy() flyBodyGyro = nil end
+    if flyBodyVelocity then flyBodyVelocity:Destroy() flyBodyVelocity = nil end
 end
 
 local function startFly()
@@ -594,11 +546,8 @@ end
 task.spawn(function()
     while true do
         task.wait()
-        -- Fly
         if Settings.Fly then
-            if not flyBodyGyro or not flyBodyVelocity then
-                startFly()
-            end
+            if not flyBodyGyro or not flyBodyVelocity then startFly() end
             local root = getRoot(LocalPlayer)
             if root and flyBodyVelocity then
                 local moveDir = Vector3.zero
@@ -613,58 +562,47 @@ task.spawn(function()
         else
             stopFly()
         end
-        -- Noclip
         if Settings.Noclip and LocalPlayer.Character then
             for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
-                if part:IsA("BasePart") then
-                    part.CanCollide = false
-                end
+                if part:IsA("BasePart") then part.CanCollide = false end
             end
         end
-        -- Infinite Jump
         if Settings.InfiniteJump and LocalPlayer.Character then
             local humanoid = getHumanoid(LocalPlayer)
             if humanoid and humanoid.FloorMaterial == Enum.Material.Air then
                 humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
             end
         end
-        -- WalkSpeed e JumpPower
         local humanoid = getHumanoid(LocalPlayer)
         if humanoid then
             humanoid.WalkSpeed = Settings.WalkSpeed
             humanoid.JumpPower = Settings.JumpPower
         end
-        -- Anti-Void
         if Settings.AntiVoid and LocalPlayer.Character then
             local root = getRoot(LocalPlayer)
             if root and root.Position.Y < -200 then
-                root.CFrame = CFrame.new(0, 20, 0) -- respawn genérico
+                root.CFrame = CFrame.new(0, 20, 0)
             end
         end
     end
 end)
 
 -- Click TP
-if Settings.ClickTP then
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and Settings.ClickTP then
-            local mouse = LocalPlayer:GetMouse()
-            local ray = mouse.UnitRay
-            local targetPos = ray.Origin + ray.Direction * 100
-            local root = getRoot(LocalPlayer)
-            if root then
-                root.CFrame = CFrame.new(targetPos)
-            end
-        end
-    end)
-end
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and Settings.ClickTP then
+        local mouse = LocalPlayer:GetMouse()
+        local ray = mouse.UnitRay
+        local targetPos = ray.Origin + ray.Direction * 100
+        local root = getRoot(LocalPlayer)
+        if root then root.CFrame = CFrame.new(targetPos) end
+    end
+end)
 
 -- ================= VISUAL LOOPS =================
 task.spawn(function()
     while true do
         task.wait()
-        -- Fullbright
         if Settings.Fullbright then
             Lighting.Brightness = 2
             Lighting.ClockTime = 14
@@ -675,12 +613,10 @@ task.spawn(function()
             Lighting.FogEnd = 1000
             Lighting.GlobalShadows = true
         end
-        -- Remove Fog
         if Settings.RemoveFog then
             Lighting.FogEnd = 100000
             Lighting.FogStart = 0
         end
-        -- X-Ray
         if Settings.XRay then
             for _, v in ipairs(Workspace:GetDescendants()) do
                 if v:IsA("BasePart") and not v:IsDescendantOf(LocalPlayer.Character) then
@@ -688,15 +624,11 @@ task.spawn(function()
                 end
             end
         end
-        -- Remove Doors
         if Settings.RemoveDoors then
             for _, v in ipairs(Workspace:GetDescendants()) do
-                if v:IsA("BasePart") and v.Name:lower():find("door") then
-                    v:Destroy()
-                end
+                if v:IsA("BasePart") and v.Name:lower():find("door") then v:Destroy() end
             end
         end
-        -- Remove Map Objects
         if Settings.RemoveMapObjects then
             for _, v in ipairs(Workspace:GetDescendants()) do
                 if v:IsA("BasePart") and (v.Name:lower():find("wall") or v.Name:lower():find("obstacle")) then
@@ -705,9 +637,7 @@ task.spawn(function()
                 end
             end
         end
-        -- Custom FOV
         Camera.FieldOfView = Settings.CustomFOV
-        -- Night Vision
         if Settings.NightVision then
             Lighting.ColorCorrectionEffect = Color3.new(0, 1, 0)
         else
@@ -717,6 +647,8 @@ task.spawn(function()
 end)
 
 -- ================= PLAYER LOOPS (Spectate, Follow, Orbit) =================
+local playerDropdown2 = nil -- será definido depois
+
 task.spawn(function()
     while true do
         task.wait()
@@ -726,9 +658,7 @@ task.spawn(function()
                 Camera.CameraSubject = target.Character
             end
         else
-            if LocalPlayer.Character then
-                Camera.CameraSubject = LocalPlayer.Character
-            end
+            if LocalPlayer.Character then Camera.CameraSubject = LocalPlayer.Character end
         end
         if Settings.Follow and playerDropdown2 and playerDropdown2.Value then
             local target = getPlayerByName(playerDropdown2.Value)
@@ -756,19 +686,10 @@ end)
 task.spawn(function()
     while true do
         task.wait(1)
-        if Settings.AutoFarmCoins or Settings.AutoCollectCoins then
+        if Settings.AutoFarmCoins or Settings.AutoCollectCoins or Settings.CoinTP then
             local coin = findCoin()
             local root = getRoot(LocalPlayer)
-            if coin and root then
-                root.CFrame = coin.CFrame
-            end
-        end
-        if Settings.CoinTP then
-            local coin = findCoin()
-            local root = getRoot(LocalPlayer)
-            if coin and root then
-                root.CFrame = coin.CFrame
-            end
+            if coin and root then root.CFrame = coin.CFrame end
         end
     end
 end)
@@ -787,9 +708,7 @@ task.spawn(function()
                 firetouchinterest(root, gun, 1)
             end
         end
-        if Settings.AutoThrow then
-            throwKnife()
-        end
+        if Settings.AutoThrow then throwKnife() end
         if Settings.GunAimAssist then
             local target = getNearestPlayer(100)
             if target and target.Character and target.Character:FindFirstChild("Head") then
@@ -799,392 +718,360 @@ task.spawn(function()
     end
 end)
 
--- ================= INTERFACE WINDUI =================
-local Window = WindUI:CreateWindow({
-    Title = "Souza Hub",
-    Icon = "sparkles",
-    Author = "Souza",
-    Folder = "SouzaHub",
-    Size = UDim2.fromOffset(640, 520),
-    Theme = "Dark",
-    Transparent = true,
-})
+-- ================= INTERFACE (ORION) =================
+local OrionLib = loadstring(game:HttpGet(('https://raw.githubusercontent.com/shlexware/Orion/main/source')))()
+local Window = OrionLib:MakeWindow({Name = "Souza Hub", HidePremium = false, SaveConfig = true, ConfigFolder = "SouzaHub"})
 
--- Função para criar seção rapidamente
-local function QuickSection(tab, title)
-    return tab:Section({Title = title})
+-- Função para criar toggle com Settings
+local function addToggle(tab, name, default, callback)
+    tab:AddToggle({
+        Name = name,
+        Default = default,
+        Callback = function(Value)
+            callback(Value)
+        end
+    })
 end
 
--- ================= MAIN TAB =================
-local MainTab = Window:Tab({Title = "Main", Icon = "house"})
-local MainSection = QuickSection(MainTab, "Bem-vindo")
-MainSection:Label({Title = "Souza Hub carregado com sucesso!"})
-MainSection:Button({Title = "Iniciar", Callback = function()
-    Notify("Souza Hub", "Script ativado!")
-end})
+local function addButton(tab, name, callback)
+    tab:AddButton({
+        Name = name,
+        Callback = callback
+    })
+end
 
--- ================= COMBAT TAB =================
-local CombatTab = Window:Tab({Title = "Combat", Icon = "swords"})
-local CombatAimSection = QuickSection(CombatTab, "Aim")
-CombatAimSection:Toggle({Title = "Aimbot", Default = false, Callback = function(v) Settings.Aimbot = v end})
-CombatAimSection:Toggle({Title = "Silent Aim", Default = false, Callback = function(v) Settings.SilentAim = v end})
-CombatAimSection:Toggle({Title = "Aim Lock", Default = false, Callback = function(v) Settings.AimLock = v end})
-CombatAimSection:Slider({Title = "Aim FOV", Min = 0, Max = 360, Default = 90, Callback = function(v) Settings.AimFOV = v end})
-CombatAimSection:Toggle({Title = "FOV Circle", Default = false, Callback = function(v) Settings.FOVCircle = v end})
-local CombatAutoSection = QuickSection(CombatTab, "Automação")
-CombatAutoSection:Toggle({Title = "Auto Shoot", Default = false, Callback = function(v) Settings.AutoShoot = v end})
-CombatAutoSection:Toggle({Title = "Auto Kill Murderer", Default = false, Callback = function(v) Settings.AutoKillMurderer = v end})
-CombatAutoSection:Toggle({Title = "Auto Kill Sheriff", Default = false, Callback = function(v) Settings.AutoKillSheriff = v end})
-CombatAutoSection:Toggle({Title = "Kill Aura", Default = false, Callback = function(v) Settings.KillAura = v end})
-CombatAutoSection:Toggle({Title = "Knife Aura", Default = false, Callback = function(v) Settings.KnifeAura = v end})
-CombatAutoSection:Toggle({Title = "Throw Knife Assist", Default = false, Callback = function(v) Settings.ThrowKnifeAssist = v end})
-CombatAutoSection:Slider({Title = "Knife Reach", Min = 10, Max = 100, Default = 20, Callback = function(v) Settings.KnifeReach = v end})
-CombatAutoSection:Slider({Title = "Gun Accuracy", Min = 0, Max = 100, Default = 50, Callback = function(v) Settings.GunAccuracy = v end})
-CombatAutoSection:Toggle({Title = "Gun Prediction", Default = false, Callback = function(v) Settings.GunPrediction = v end})
-CombatAutoSection:Toggle({Title = "Auto Pickup Gun", Default = false, Callback = function(v) Settings.AutoPickupGun = v end})
-CombatAutoSection:Toggle({Title = "Instant Gun Pickup", Default = false, Callback = function(v) Settings.InstantGunPickup = v end})
+local function addSlider(tab, name, min, max, default, callback)
+    tab:AddSlider({
+        Name = name,
+        Min = min,
+        Max = max,
+        Default = default,
+        Color = Color3.fromRGB(255, 0, 0),
+        Increment = 1,
+        ValueName = "",
+        Callback = callback
+    })
+end
 
--- ================= ESP TAB =================
-local ESPTab = Window:Tab({Title = "ESP", Icon = "eye"})
-local ESPMainSection = QuickSection(ESPTab, "ESP Geral")
-ESPMainSection:Toggle({Title = "Player ESP", Default = false, Callback = function(v) Settings.PlayerESP = v; if not v then clearESP() end end})
-ESPMainSection:Toggle({Title = "Name ESP", Default = false, Callback = function(v) Settings.NameESP = v end})
-ESPMainSection:Toggle({Title = "Distance ESP", Default = false, Callback = function(v) Settings.DistanceESP = v end})
-ESPMainSection:Toggle({Title = "Box ESP", Default = false, Callback = function(v) Settings.BoxESP = v end})
-ESPMainSection:Toggle({Title = "Tracer ESP", Default = false, Callback = function(v) Settings.TracerESP = v end})
-ESPMainSection:Toggle({Title = "Highlight ESP", Default = false, Callback = function(v) Settings.HighlightESP = v end})
-local ESPRoleSection = QuickSection(ESPTab, "ESP por Papel")
-ESPRoleSection:Toggle({Title = "Murderer ESP (Vermelho)", Default = false, Callback = function(v) Settings.MurdererESP = v end})
-ESPRoleSection:Toggle({Title = "Sheriff ESP (Azul)", Default = false, Callback = function(v) Settings.SheriffESP = v end})
-ESPRoleSection:Toggle({Title = "Innocent ESP (Verde)", Default = false, Callback = function(v) Settings.InnocentESP = v end})
-ESPRoleSection:Toggle({Title = "Hero ESP (Dourado)", Default = false, Callback = function(v) Settings.HeroESP = v end})
-ESPRoleSection:Toggle({Title = "Gun ESP", Default = false, Callback = function(v) Settings.GunESP = v end})
-ESPRoleSection:Toggle({Title = "Role Colors", Default = false, Callback = function(v) Settings.RoleColors = v end})
-ESPRoleSection:Toggle({Title = "Role Chams", Default = false, Callback = function(v) Settings.RoleChams = v end})
+local function addDropdown(tab, name, options, default, callback)
+    local dropdown = tab:AddDropdown({
+        Name = name,
+        Default = default or "",
+        Options = options,
+        Callback = callback
+    })
+    return dropdown
+end
 
--- ================= ROLE/DETECTION TAB =================
-local RoleDetTab = Window:Tab({Title = "Role/Detecção", Icon = "user-secret"})
-local RoleDetSection = QuickSection(RoleDetTab, "Detecção de Papéis")
-RoleDetSection:Toggle({Title = "Detect Murderer", Default = false, Callback = function(v) Settings.DetectMurderer = v end})
-RoleDetSection:Toggle({Title = "Detect Sheriff", Default = false, Callback = function(v) Settings.DetectSheriff = v end})
-RoleDetSection:Toggle({Title = "Detect Hero", Default = false, Callback = function(v) Settings.DetectHero = v end})
-local RoleAlertSection = QuickSection(RoleDetTab, "Alertas")
-RoleAlertSection:Toggle({Title = "Role Notifications", Default = false, Callback = function(v) Settings.RoleNotifications = v end})
-RoleAlertSection:Toggle({Title = "Murderer Alert", Default = false, Callback = function(v) Settings.MurdererAlert = v end})
-RoleAlertSection:Toggle({Title = "Sheriff Alert", Default = false, Callback = function(v) Settings.SheriffAlert = v end})
-RoleAlertSection:Toggle({Title = "Mostrar quem pegou a arma", Default = false, Callback = function(v) Settings.ShowGunPickup = v end})
+-- Abas
+local MainTab = Window:MakeTab({Name = "Main", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local CombatTab = Window:MakeTab({Name = "Combat", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local ESPTab = Window:MakeTab({Name = "ESP", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local RoleDetTab = Window:MakeTab({Name = "Role/Detecção", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local TeleportTab = Window:MakeTab({Name = "Teleport", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local MovementTab = Window:MakeTab({Name = "Movement", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local FarmTab = Window:MakeTab({Name = "Farm", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local SurvivalTab = Window:MakeTab({Name = "Survival", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local VisualTab = Window:MakeTab({Name = "Visual", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local PlayerTab = Window:MakeTab({Name = "Player", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local GunTab = Window:MakeTab({Name = "Gun", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local KnifeTab = Window:MakeTab({Name = "Knife", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local MobileTab = Window:MakeTab({Name = "Mobile", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local InterfaceTab = Window:MakeTab({Name = "Interface", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local ServerTab = Window:MakeTab({Name = "Server", Icon = "rbxassetid://4483345998", PremiumOnly = false})
+local MiscTab = Window:MakeTab({Name = "Misc", Icon = "rbxassetid://4483345998", PremiumOnly = false})
 
--- ================= TELEPORT TAB =================
-local TeleportTab = Window:Tab({Title = "Teleport", Icon = "location-arrow"})
-local TeleportSection = QuickSection(TeleportTab, "Teleportes")
-TeleportSection:Button({Title = "Teleport to Murderer", Callback = function()
+-- Main
+local MainSection = MainTab:AddSection({Name = "Bem-vindo"})
+MainSection:AddLabel("Souza Hub carregado com sucesso!")
+MainSection:AddButton({Name = "Iniciar", Callback = function() Notify("Souza Hub", "Script ativado!") end})
+
+-- Combat
+local CombatAim = CombatTab:AddSection({Name = "Aim"})
+addToggle(CombatTab, "Aimbot", false, function(v) Settings.Aimbot = v end)
+addToggle(CombatTab, "Silent Aim", false, function(v) Settings.SilentAim = v end)
+addToggle(CombatTab, "Aim Lock", false, function(v) Settings.AimLock = v end)
+addSlider(CombatTab, "Aim FOV", 0, 360, 90, function(v) Settings.AimFOV = v end)
+addToggle(CombatTab, "FOV Circle", false, function(v) Settings.FOVCircle = v end)
+local CombatAuto = CombatTab:AddSection({Name = "Automação"})
+addToggle(CombatTab, "Auto Shoot", false, function(v) Settings.AutoShoot = v end)
+addToggle(CombatTab, "Auto Kill Murderer", false, function(v) Settings.AutoKillMurderer = v end)
+addToggle(CombatTab, "Auto Kill Sheriff", false, function(v) Settings.AutoKillSheriff = v end)
+addToggle(CombatTab, "Kill Aura", false, function(v) Settings.KillAura = v end)
+addToggle(CombatTab, "Knife Aura", false, function(v) Settings.KnifeAura = v end)
+addToggle(CombatTab, "Throw Knife Assist", false, function(v) Settings.ThrowKnifeAssist = v end)
+addSlider(CombatTab, "Knife Reach", 10, 100, 20, function(v) Settings.KnifeReach = v end)
+addSlider(CombatTab, "Gun Accuracy", 0, 100, 50, function(v) Settings.GunAccuracy = v end)
+addToggle(CombatTab, "Gun Prediction", false, function(v) Settings.GunPrediction = v end)
+addToggle(CombatTab, "Auto Pickup Gun", false, function(v) Settings.AutoPickupGun = v end)
+addToggle(CombatTab, "Instant Gun Pickup", false, function(v) Settings.InstantGunPickup = v end)
+
+-- ESP
+local ESPMain = ESPTab:AddSection({Name = "ESP Geral"})
+addToggle(ESPTab, "Player ESP", false, function(v) Settings.PlayerESP = v; if not v then clearESP() end end)
+addToggle(ESPTab, "Name ESP", false, function(v) Settings.NameESP = v end)
+addToggle(ESPTab, "Distance ESP", false, function(v) Settings.DistanceESP = v end)
+addToggle(ESPTab, "Box ESP", false, function(v) Settings.BoxESP = v end)
+addToggle(ESPTab, "Tracer ESP", false, function(v) Settings.TracerESP = v end)
+addToggle(ESPTab, "Highlight ESP", false, function(v) Settings.HighlightESP = v end)
+local ESPRole = ESPTab:AddSection({Name = "ESP por Papel"})
+addToggle(ESPTab, "Murderer ESP (Vermelho)", false, function(v) Settings.MurdererESP = v end)
+addToggle(ESPTab, "Sheriff ESP (Azul)", false, function(v) Settings.SheriffESP = v end)
+addToggle(ESPTab, "Innocent ESP (Verde)", false, function(v) Settings.InnocentESP = v end)
+addToggle(ESPTab, "Hero ESP (Dourado)", false, function(v) Settings.HeroESP = v end)
+addToggle(ESPTab, "Gun ESP", false, function(v) Settings.GunESP = v end)
+addToggle(ESPTab, "Role Colors", false, function(v) Settings.RoleColors = v end)
+addToggle(ESPTab, "Role Chams", false, function(v) Settings.RoleChams = v end)
+
+-- Role/Detection
+local RoleDetSec = RoleDetTab:AddSection({Name = "Detecção"})
+addToggle(RoleDetTab, "Detect Murderer", false, function(v) Settings.DetectMurderer = v end)
+addToggle(RoleDetTab, "Detect Sheriff", false, function(v) Settings.DetectSheriff = v end)
+addToggle(RoleDetTab, "Detect Hero", false, function(v) Settings.DetectHero = v end)
+local RoleAlertSec = RoleDetTab:AddSection({Name = "Alertas"})
+addToggle(RoleDetTab, "Role Notifications", false, function(v) Settings.RoleNotifications = v end)
+addToggle(RoleDetTab, "Murderer Alert", false, function(v) Settings.MurdererAlert = v end)
+addToggle(RoleDetTab, "Sheriff Alert", false, function(v) Settings.SheriffAlert = v end)
+addToggle(RoleDetTab, "Mostrar quem pegou a arma", false, function(v) Settings.ShowGunPickup = v end)
+
+-- Teleport
+local TeleportSec = TeleportTab:AddSection({Name = "Teleportes"})
+addButton(TeleportTab, "Teleport to Murderer", function()
     local m = getMurderer()
     local targetRoot = getRoot(m)
     local localRoot = getRoot(LocalPlayer)
-    if targetRoot and localRoot then
-        localRoot.CFrame = targetRoot.CFrame
-        Notify("Teleport", "Teleportado ao Murderer")
-    else
-        Notify("Teleport", "Murderer não encontrado")
-    end
-end})
-TeleportSection:Button({Title = "Teleport to Sheriff", Callback = function()
+    if targetRoot and localRoot then localRoot.CFrame = targetRoot.CFrame; Notify("Teleport", "Teleportado ao Murderer") else Notify("Teleport", "Murderer não encontrado") end
+end)
+addButton(TeleportTab, "Teleport to Sheriff", function()
     local s = getSheriff()
     local targetRoot = getRoot(s)
     local localRoot = getRoot(LocalPlayer)
-    if targetRoot and localRoot then
-        localRoot.CFrame = targetRoot.CFrame
-        Notify("Teleport", "Teleportado ao Sheriff")
-    else
-        Notify("Teleport", "Sheriff não encontrado")
-    end
-end})
-TeleportSection:Button({Title = "Teleport to Gun Drop", Callback = function()
+    if targetRoot and localRoot then localRoot.CFrame = targetRoot.CFrame; Notify("Teleport", "Teleportado ao Sheriff") else Notify("Teleport", "Sheriff não encontrado") end
+end)
+addButton(TeleportTab, "Teleport to Gun Drop", function()
     local gun = findGunDrop()
     local localRoot = getRoot(LocalPlayer)
-    if gun and localRoot then
-        localRoot.CFrame = gun.CFrame
-        Notify("Teleport", "Teleportado à arma")
-    else
-        Notify("Teleport", "Arma não encontrada")
-    end
-end})
-TeleportSection:Button({Title = "Teleport to Lobby", Callback = function()
-    local localRoot = getRoot(LocalPlayer)
-    if localRoot then
-        localRoot.CFrame = CFrame.new(0, 30, 0) -- ajuste
-    end
-end})
-TeleportSection:Button({Title = "Teleport to Map", Callback = function()
-    local localRoot = getRoot(LocalPlayer)
-    if localRoot then
-        localRoot.CFrame = CFrame.new(0, 30, 0) -- ajuste
-    end
-end})
-TeleportSection:Button({Title = "Teleport to Spawn", Callback = function()
-    local localRoot = getRoot(LocalPlayer)
-    if localRoot then
-        localRoot.CFrame = CFrame.new(0, 30, 0) -- ajuste
-    end
-end})
-local TeleportPlayerSection = QuickSection(TeleportTab, "Teleportar para Jogador")
-local playerDropdown = TeleportPlayerSection:Dropdown({
-    Title = "Selecionar Jogador",
-    Options = getPlayerNames(),
-    Default = "",
-    Callback = function(v) end
-})
-TeleportPlayerSection:Button({Title = "Teleport to Player", Callback = function()
-    local target = playerDropdown.Value
-    if target and target ~= "" then
-        local plr = getPlayerByName(target)
+    if gun and localRoot then localRoot.CFrame = gun.CFrame end
+end)
+addButton(TeleportTab, "Teleport to Lobby", function()
+    local root = getRoot(LocalPlayer)
+    if root then root.CFrame = CFrame.new(0, 30, 0) end
+end)
+addButton(TeleportTab, "Teleport to Map", function()
+    local root = getRoot(LocalPlayer)
+    if root then root.CFrame = CFrame.new(0, 30, 0) end
+end)
+addButton(TeleportTab, "Teleport to Spawn", function()
+    local root = getRoot(LocalPlayer)
+    if root then root.CFrame = CFrame.new(0, 30, 0) end
+end)
+local TeleportPlayerSec = TeleportTab:AddSection({Name = "Teleportar para Jogador"})
+local playerDropdown = addDropdown(TeleportTab, "Selecionar Jogador", getPlayerNames(), "", function(v) end)
+addButton(TeleportTab, "Teleport to Player", function()
+    if playerDropdown.Value ~= "" then
+        local plr = getPlayerByName(playerDropdown.Value)
         local targetRoot = getRoot(plr)
         local localRoot = getRoot(LocalPlayer)
-        if targetRoot and localRoot then
-            localRoot.CFrame = targetRoot.CFrame
-        end
+        if targetRoot and localRoot then localRoot.CFrame = targetRoot.CFrame end
     end
-end})
-TeleportPlayerSection:Button({Title = "Teleport Behind Player", Callback = function()
-    local target = playerDropdown.Value
-    if target and target ~= "" then
-        local plr = getPlayerByName(target)
+end)
+addButton(TeleportTab, "Teleport Behind Player", function()
+    if playerDropdown.Value ~= "" then
+        local plr = getPlayerByName(playerDropdown.Value)
         local targetRoot = getRoot(plr)
         local localRoot = getRoot(LocalPlayer)
-        if targetRoot and localRoot then
-            localRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 0, -3)
-        end
+        if targetRoot and localRoot then localRoot.CFrame = targetRoot.CFrame * CFrame.new(0,0,-3) end
     end
-end})
+end)
 
--- ================= MOVEMENT TAB =================
-local MovementTab = Window:Tab({Title = "Movement", Icon = "person-running"})
-local MovementSection = QuickSection(MovementTab, "Velocidade e Pulo")
-MovementSection:Slider({Title = "WalkSpeed", Min = 16, Max = 200, Default = 16, Callback = function(v) Settings.WalkSpeed = v end})
-MovementSection:Slider({Title = "JumpPower", Min = 50, Max = 300, Default = 50, Callback = function(v) Settings.JumpPower = v end})
-local MovementSpecialSection = QuickSection(MovementTab, "Movimentação Especial")
-MovementSpecialSection:Toggle({Title = "Infinite Jump", Default = false, Callback = function(v) Settings.InfiniteJump = v end})
-MovementSpecialSection:Toggle({Title = "Fly", Default = false, Callback = function(v) Settings.Fly = v end})
-MovementSpecialSection:Toggle({Title = "Noclip", Default = false, Callback = function(v) Settings.Noclip = v end})
-MovementSpecialSection:Toggle({Title = "Click TP", Default = false, Callback = function(v) Settings.ClickTP = v end})
-MovementSpecialSection:Toggle({Title = "Dash", Default = false, Callback = function(v) Settings.Dash = v end})
-MovementSpecialSection:Toggle({Title = "Spin", Default = false, Callback = function(v) Settings.Spin = v end})
-MovementSpecialSection:Toggle({Title = "Bunny Hop", Default = false, Callback = function(v) Settings.BunnyHop = v end})
-MovementSpecialSection:Toggle({Title = "Anti-Void", Default = false, Callback = function(v) Settings.AntiVoid = v end})
+-- Movement
+local MovementSec = MovementTab:AddSection({Name = "Velocidade e Pulo"})
+addSlider(MovementTab, "WalkSpeed", 16, 200, 16, function(v) Settings.WalkSpeed = v end)
+addSlider(MovementTab, "JumpPower", 50, 300, 50, function(v) Settings.JumpPower = v end)
+local MovementSpecial = MovementTab:AddSection({Name = "Movimentação Especial"})
+addToggle(MovementTab, "Infinite Jump", false, function(v) Settings.InfiniteJump = v end)
+addToggle(MovementTab, "Fly", false, function(v) Settings.Fly = v end)
+addToggle(MovementTab, "Noclip", false, function(v) Settings.Noclip = v end)
+addToggle(MovementTab, "Click TP", false, function(v) Settings.ClickTP = v end)
+addToggle(MovementTab, "Dash", false, function(v) Settings.Dash = v end)
+addToggle(MovementTab, "Spin", false, function(v) Settings.Spin = v end)
+addToggle(MovementTab, "Bunny Hop", false, function(v) Settings.BunnyHop = v end)
+addToggle(MovementTab, "Anti-Void", false, function(v) Settings.AntiVoid = v end)
 
--- ================= FARM TAB =================
-local FarmTab = Window:Tab({Title = "Farm", Icon = "coins"})
-local FarmSection = QuickSection(FarmTab, "Farm Automático")
-FarmSection:Toggle({Title = "Auto Farm Coins", Default = false, Callback = function(v) Settings.AutoFarmCoins = v end})
-FarmSection:Toggle({Title = "Auto Collect Coins", Default = false, Callback = function(v) Settings.AutoCollectCoins = v end})
-FarmSection:Toggle({Title = "Auto Farm Candy/Eventos", Default = false, Callback = function(v) Settings.AutoFarmCandy = v end})
-FarmSection:Toggle({Title = "Coin TP", Default = false, Callback = function(v) Settings.CoinTP = v end})
-FarmSection:Toggle({Title = "Auto Farm XP", Default = false, Callback = function(v) Settings.AutoFarmXP = v end})
-FarmSection:Toggle({Title = "Auto Farm Wins", Default = false, Callback = function(v) Settings.AutoFarmWins = v end})
-FarmSection:Toggle({Title = "Auto Rejoin", Default = false, Callback = function(v) Settings.AutoRejoin = v end})
-FarmSection:Toggle({Title = "Server Hop", Default = false, Callback = function(v) Settings.ServerHop = v end})
+-- Farm
+local FarmSec = FarmTab:AddSection({Name = "Farm Automático"})
+addToggle(FarmTab, "Auto Farm Coins", false, function(v) Settings.AutoFarmCoins = v end)
+addToggle(FarmTab, "Auto Collect Coins", false, function(v) Settings.AutoCollectCoins = v end)
+addToggle(FarmTab, "Auto Farm Candy/Eventos", false, function(v) Settings.AutoFarmCandy = v end)
+addToggle(FarmTab, "Coin TP", false, function(v) Settings.CoinTP = v end)
+addToggle(FarmTab, "Auto Farm XP", false, function(v) Settings.AutoFarmXP = v end)
+addToggle(FarmTab, "Auto Farm Wins", false, function(v) Settings.AutoFarmWins = v end)
+addToggle(FarmTab, "Auto Rejoin", false, function(v) Settings.AutoRejoin = v end)
+addToggle(FarmTab, "Server Hop", false, function(v) Settings.ServerHop = v end)
 
--- ================= SURVIVAL TAB =================
-local SurvivalTab = Window:Tab({Title = "Survival", Icon = "shield-halved"})
-local SurvivalSection = QuickSection(SurvivalTab, "Defesa")
-SurvivalSection:Toggle({Title = "Auto Dodge", Default = false, Callback = function(v) Settings.AutoDodge = v end})
-SurvivalSection:Toggle({Title = "Auto Escape Murderer", Default = false, Callback = function(v) Settings.AutoEscapeMurderer = v end})
-SurvivalSection:Toggle({Title = "Anti-Knife", Default = false, Callback = function(v) Settings.AntiKnife = v end})
-SurvivalSection:Toggle({Title = "Anti-Gun", Default = false, Callback = function(v) Settings.AntiGun = v end})
-SurvivalSection:Toggle({Title = "Anti-Fling", Default = false, Callback = function(v) Settings.AntiFling = v end})
-SurvivalSection:Toggle({Title = "Anti-AFK", Default = false, Callback = function(v) Settings.AntiAFK = v end})
-SurvivalSection:Toggle({Title = "Auto Reset", Default = false, Callback = function(v) Settings.AutoReset = v end})
-SurvivalSection:Toggle({Title = "Safe Spot", Default = false, Callback = function(v) Settings.SafeSpot = v end})
+-- Survival
+local SurvivalSec = SurvivalTab:AddSection({Name = "Defesa"})
+addToggle(SurvivalTab, "Auto Dodge", false, function(v) Settings.AutoDodge = v end)
+addToggle(SurvivalTab, "Auto Escape Murderer", false, function(v) Settings.AutoEscapeMurderer = v end)
+addToggle(SurvivalTab, "Anti-Knife", false, function(v) Settings.AntiKnife = v end)
+addToggle(SurvivalTab, "Anti-Gun", false, function(v) Settings.AntiGun = v end)
+addToggle(SurvivalTab, "Anti-Fling", false, function(v) Settings.AntiFling = v end)
+addToggle(SurvivalTab, "Anti-AFK", false, function(v) Settings.AntiAFK = v end)
+addToggle(SurvivalTab, "Auto Reset", false, function(v) Settings.AutoReset = v end)
+addToggle(SurvivalTab, "Safe Spot", false, function(v) Settings.SafeSpot = v end)
 
--- ================= VISUAL TAB =================
-local VisualTab = Window:Tab({Title = "Visual", Icon = "eye-slash"})
-local VisualWorldSection = QuickSection(VisualTab, "Mundo")
-VisualWorldSection:Toggle({Title = "Fullbright", Default = false, Callback = function(v) Settings.Fullbright = v end})
-VisualWorldSection:Toggle({Title = "Remove Fog", Default = false, Callback = function(v) Settings.RemoveFog = v end})
-VisualWorldSection:Toggle({Title = "X-Ray", Default = false, Callback = function(v) Settings.XRay = v end})
-VisualWorldSection:Toggle({Title = "Remove Doors", Default = false, Callback = function(v) Settings.RemoveDoors = v end})
-VisualWorldSection:Toggle({Title = "Remove Map Objects", Default = false, Callback = function(v) Settings.RemoveMapObjects = v end})
-local VisualPlayerSection = QuickSection(VisualTab, "Jogador e Câmera")
-VisualPlayerSection:Toggle({Title = "Player Chams", Default = false, Callback = function(v) Settings.PlayerChams = v end})
-VisualPlayerSection:Toggle({Title = "Crosshair", Default = false, Callback = function(v) Settings.Crosshair = v end})
-VisualPlayerSection:Slider({Title = "Custom FOV", Min = 30, Max = 120, Default = 70, Callback = function(v) Settings.CustomFOV = v end})
-VisualPlayerSection:Toggle({Title = "Night Vision", Default = false, Callback = function(v) Settings.NightVision = v end})
+-- Visual
+local VisualWorld = VisualTab:AddSection({Name = "Mundo"})
+addToggle(VisualTab, "Fullbright", false, function(v) Settings.Fullbright = v end)
+addToggle(VisualTab, "Remove Fog", false, function(v) Settings.RemoveFog = v end)
+addToggle(VisualTab, "X-Ray", false, function(v) Settings.XRay = v end)
+addToggle(VisualTab, "Remove Doors", false, function(v) Settings.RemoveDoors = v end)
+addToggle(VisualTab, "Remove Map Objects", false, function(v) Settings.RemoveMapObjects = v end)
+local VisualPlayer = VisualTab:AddSection({Name = "Jogador e Câmera"})
+addToggle(VisualTab, "Player Chams", false, function(v) Settings.PlayerChams = v end)
+addToggle(VisualTab, "Crosshair", false, function(v) Settings.Crosshair = v end)
+addSlider(VisualTab, "Custom FOV", 30, 120, 70, function(v) Settings.CustomFOV = v end)
+addToggle(VisualTab, "Night Vision", false, function(v) Settings.NightVision = v end)
 
--- ================= PLAYER TAB =================
-local PlayerTab = Window:Tab({Title = "Player", Icon = "user"})
-local PlayerSelectSection = QuickSection(PlayerTab, "Selecionar Jogador")
-local playerDropdown2 = PlayerSelectSection:Dropdown({
-    Title = "Jogador Alvo",
-    Options = getPlayerNames(),
-    Default = "",
-    Callback = function(v) end
-})
-local PlayerActionSection = QuickSection(PlayerTab, "Interações")
-PlayerActionSection:Toggle({Title = "Spectate Player", Default = false, Callback = function(v) Settings.Spectate = v end})
-PlayerActionSection:Toggle({Title = "View Player", Default = false, Callback = function(v) Settings.View = v end})
-PlayerActionSection:Toggle({Title = "Follow Player", Default = false, Callback = function(v) Settings.Follow = v end})
-PlayerActionSection:Toggle({Title = "Orbit Player", Default = false, Callback = function(v) Settings.Orbit = v end})
-PlayerActionSection:Button({Title = "Fling", Callback = function()
-    local target = playerDropdown2.Value
-    if target and target ~= "" then
-        local plr = getPlayerByName(target)
+-- Player
+local PlayerSelect = PlayerTab:AddSection({Name = "Selecionar Jogador"})
+playerDropdown2 = addDropdown(PlayerTab, "Jogador Alvo", getPlayerNames(), "", function(v) end)
+local PlayerActions = PlayerTab:AddSection({Name = "Interações"})
+addToggle(PlayerTab, "Spectate Player", false, function(v) Settings.Spectate = v end)
+addToggle(PlayerTab, "View Player", false, function(v) Settings.View = v end)
+addToggle(PlayerTab, "Follow Player", false, function(v) Settings.Follow = v end)
+addToggle(PlayerTab, "Orbit Player", false, function(v) Settings.Orbit = v end)
+addButton(PlayerTab, "Fling", function()
+    if playerDropdown2.Value ~= "" then
+        local plr = getPlayerByName(playerDropdown2.Value)
         local root = getRoot(plr)
-        if root then
-            root.Velocity = Vector3.new(0, 5000, 0)
-            root.RotVelocity = Vector3.new(100, 100, 100)
-        end
+        if root then root.Velocity = Vector3.new(0,5000,0); root.RotVelocity = Vector3.new(100,100,100) end
     end
-end})
-PlayerActionSection:Button({Title = "Bring Player", Callback = function()
-    local target = playerDropdown2.Value
-    if target and target ~= "" then
-        local plr = getPlayerByName(target)
+end)
+addButton(PlayerTab, "Bring Player", function()
+    if playerDropdown2.Value ~= "" then
+        local plr = getPlayerByName(playerDropdown2.Value)
         local targetRoot = getRoot(plr)
         local localRoot = getRoot(LocalPlayer)
-        if targetRoot and localRoot then
-            targetRoot.CFrame = localRoot.CFrame
-        end
+        if targetRoot and localRoot then targetRoot.CFrame = localRoot.CFrame end
     end
-end})
-PlayerActionSection:Toggle({Title = "Freeze Local", Default = false, Callback = function(v) Settings.FreezeLocal = v end})
-PlayerActionSection:Toggle({Title = "Freeze Visual", Default = false, Callback = function(v) Settings.FreezeVisual = v end})
-PlayerActionSection:Button({Title = "Copy Avatar", Callback = function()
-    local target = playerDropdown2.Value
-    if target and target ~= "" then
-        local plr = getPlayerByName(target)
+end)
+addToggle(PlayerTab, "Freeze Local", false, function(v) Settings.FreezeLocal = v end)
+addToggle(PlayerTab, "Freeze Visual", false, function(v) Settings.FreezeVisual = v end)
+addButton(PlayerTab, "Copy Avatar", function()
+    if playerDropdown2.Value ~= "" then
+        local plr = getPlayerByName(playerDropdown2.Value)
         local targetHumanoid = getHumanoid(plr)
         local localHumanoid = getHumanoid(LocalPlayer)
         if targetHumanoid and localHumanoid and targetHumanoid.HumanoidDescription then
             localHumanoid:ApplyDescription(targetHumanoid.HumanoidDescription)
         end
     end
-end})
+end)
 
--- ================= GUN TAB =================
-local GunTab = Window:Tab({Title = "Gun", Icon = "gun"})
-local GunSection = QuickSection(GunTab, "Arma")
-GunSection:Toggle({Title = "Gun Drop ESP", Default = false, Callback = function(v) Settings.GunDropESP = v end})
-GunSection:Button({Title = "Teleport Gun", Callback = function()
+-- Gun
+local GunSec = GunTab:AddSection({Name = "Arma"})
+addToggle(GunTab, "Gun Drop ESP", false, function(v) Settings.GunDropESP = v end)
+addButton(GunTab, "Teleport Gun", function()
     local gun = findGunDrop()
-    local localRoot = getRoot(LocalPlayer)
-    if gun and localRoot then
-        localRoot.CFrame = gun.CFrame
-    end
-end})
-GunSection:Toggle({Title = "Auto Grab Gun", Default = false, Callback = function(v) Settings.AutoGrabGun = v end})
-GunSection:Toggle({Title = "Gun Aim Assist", Default = false, Callback = function(v) Settings.GunAimAssist = v end})
-GunSection:Toggle({Title = "Gun Prediction", Default = false, Callback = function(v) Settings.GunPrediction2 = v end})
-GunSection:Button({Title = "Shoot Murderer", Callback = function()
+    local root = getRoot(LocalPlayer)
+    if gun and root then root.CFrame = gun.CFrame end
+end)
+addToggle(GunTab, "Auto Grab Gun", false, function(v) Settings.AutoGrabGun = v end)
+addToggle(GunTab, "Gun Aim Assist", false, function(v) Settings.GunAimAssist = v end)
+addToggle(GunTab, "Gun Prediction", false, function(v) Settings.GunPrediction2 = v end)
+addButton(GunTab, "Shoot Murderer", function()
     local m = getMurderer()
     if m and m.Character and m.Character:FindFirstChild("Head") then
         Camera.CFrame = CFrame.new(Camera.CFrame.Position, m.Character.Head.Position)
         task.wait(0.2)
         shootGun()
     end
-end})
-GunSection:Toggle({Title = "Botão de Atirar (Mobile)", Default = false, Callback = function(v)
-    Settings.ShootButton = v
-    if v then createMobileButtons() else removeMobileButtons() end
-end})
+end)
+addToggle(GunTab, "Botão de Atirar (Mobile)", false, function(v) Settings.ShootButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
 
--- ================= KNIFE TAB =================
-local KnifeTab = Window:Tab({Title = "Knife", Icon = "dagger"})
-local KnifeSection = QuickSection(KnifeTab, "Faca")
-KnifeSection:Toggle({Title = "Knife Throw Assist", Default = false, Callback = function(v) Settings.ThrowKnifeAssist = v end})
-KnifeSection:Toggle({Title = "Throw Prediction", Default = false, Callback = function(v) Settings.ThrowPrediction = v end})
-KnifeSection:Slider({Title = "Knife Range/Reach", Min = 10, Max = 100, Default = 20, Callback = function(v) Settings.KnifeReach = v end})
-KnifeSection:Toggle({Title = "Auto Throw", Default = false, Callback = function(v) Settings.AutoThrow = v end})
-KnifeSection:Toggle({Title = "Knife Aura", Default = false, Callback = function(v) Settings.KnifeAura = v end})
-KnifeSection:Toggle({Title = "Fake Knife", Default = false, Callback = function(v) Settings.FakeKnife = v end})
-local KnifeTargetSection = QuickSection(KnifeTab, "Alvo da Faca")
-KnifeTargetSection:Dropdown({Title = "Knife Target", Options = getPlayerNames(), Default = "", Callback = function(v) Settings.KnifeTarget = v end})
-KnifeTargetSection:Toggle({Title = "Botão de Facada (Mobile)", Default = false, Callback = function(v)
-    Settings.ThrowKnifeButton = v
-    if v then createMobileButtons() else removeMobileButtons() end
-end})
+-- Knife
+local KnifeSec = KnifeTab:AddSection({Name = "Faca"})
+addToggle(KnifeTab, "Knife Throw Assist", false, function(v) Settings.ThrowKnifeAssist = v end)
+addToggle(KnifeTab, "Throw Prediction", false, function(v) Settings.ThrowPrediction = v end)
+addSlider(KnifeTab, "Knife Range/Reach", 10, 100, 20, function(v) Settings.KnifeReach = v end)
+addToggle(KnifeTab, "Auto Throw", false, function(v) Settings.AutoThrow = v end)
+addToggle(KnifeTab, "Knife Aura", false, function(v) Settings.KnifeAura = v end)
+addToggle(KnifeTab, "Fake Knife", false, function(v) Settings.FakeKnife = v end)
+local KnifeTargetSec = KnifeTab:AddSection({Name = "Alvo da Faca"})
+addDropdown(KnifeTab, "Knife Target", getPlayerNames(), "", function(v) Settings.KnifeTarget = v end)
+addToggle(KnifeTab, "Botão de Facada (Mobile)", false, function(v) Settings.ThrowKnifeButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
 
--- ================= MOBILE TAB =================
-local MobileTab = Window:Tab({Title = "Mobile", Icon = "mobile-screen"})
-local MobileSection = QuickSection(MobileTab, "Botões Mobile")
-MobileSection:Toggle({Title = "Aim Button", Default = false, Callback = function(v) Settings.AimButton = v; if v then createMobileButtons() else removeMobileButtons() end end})
-MobileSection:Toggle({Title = "Shoot Button", Default = false, Callback = function(v) Settings.ShootButton = v; if v then createMobileButtons() else removeMobileButtons() end end})
-MobileSection:Toggle({Title = "Throw Knife Button", Default = false, Callback = function(v) Settings.ThrowKnifeButton = v; if v then createMobileButtons() else removeMobileButtons() end end})
-MobileSection:Toggle({Title = "Fly Controls", Default = false, Callback = function(v) Settings.FlyControls = v end})
-MobileSection:Toggle({Title = "TP Button", Default = false, Callback = function(v) Settings.TPButton = v; if v then createMobileButtons() else removeMobileButtons() end end})
-MobileSection:Toggle({Title = "Ligar/Desligar ESP", Default = false, Callback = function(v) Settings.PlayerESP = v end})
+-- Mobile
+local MobileSec = MobileTab:AddSection({Name = "Botões Mobile"})
+addToggle(MobileTab, "Aim Button", false, function(v) Settings.AimButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
+addToggle(MobileTab, "Shoot Button", false, function(v) Settings.ShootButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
+addToggle(MobileTab, "Throw Knife Button", false, function(v) Settings.ThrowKnifeButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
+addToggle(MobileTab, "Fly Controls", false, function(v) Settings.FlyControls = v end)
+addToggle(MobileTab, "TP Button", false, function(v) Settings.TPButton = v; if v then createMobileButtons() else removeMobileButtons() end end)
+addToggle(MobileTab, "Ligar/Desligar ESP", false, function(v) Settings.PlayerESP = v end)
 
--- ================= INTERFACE TAB =================
-local InterfaceTab = Window:Tab({Title = "Interface", Icon = "sliders"})
-local InterfaceSection = QuickSection(InterfaceTab, "Configurações da UI")
-InterfaceSection:Dropdown({Title = "Tema", Options = {"Dark", "Light", "Blue", "Purple", "Red"}, Default = "Dark", Callback = function(v)
-    -- Tentar mudar tema da WindUI (pode não funcionar, mas registramos)
-    print("Tema selecionado:", v)
-end})
-InterfaceSection:Slider({Title = "Escala da UI", Min = 50, Max = 150, Default = 100, Callback = function(v) end})
-InterfaceSection:Toggle({Title = "Notificações", Default = true, Callback = function(v) end})
-InterfaceSection:Button({Title = "Minimizar UI", Callback = function() Window:Minimize() end})
-InterfaceSection:Button({Title = "Esconder UI", Callback = function() Window:Close() end})
-InterfaceSection:Button({Title = "Salvar Configurações", Callback = function()
-    Notify("Souza Hub", "Configurações salvas!")
-end})
-InterfaceSection:Keybind({Title = "Keybind Esconder UI", Default = "RightShift", Callback = function() Window:Close() end})
--- Search bar (aproximação com um TextBox? A WindUI pode não ter, mas podemos tentar)
--- Não implementado pois a API não oferece TextBox; recomendamos usar Dropdown.
+-- Interface
+local InterfaceSec = InterfaceTab:AddSection({Name = "Configurações da UI"})
+addDropdown(InterfaceTab, "Tema", {"Dark", "Light", "Blue", "Purple", "Red"}, "Dark", function(v) print("Tema:", v) end)
+addSlider(InterfaceTab, "Escala da UI", 50, 150, 100, function(v) end)
+addToggle(InterfaceTab, "Notificações", true, function(v) end)
+addButton(InterfaceTab, "Minimizar UI", function() OrionLib:MakeNotification({Name = "Souza Hub", Content = "UI minimizada", Time = 2}) end)
+addButton(InterfaceTab, "Esconder UI", function() OrionLib:MakeNotification({Name = "Souza Hub", Content = "UI escondida", Time = 2}) end)
+addButton(InterfaceTab, "Salvar Configurações", function() OrionLib:SaveConfig() end)
+addToggle(InterfaceTab, "Keybind Esconder UI", false, function(v) end) -- Apenas placeholder
 
--- ================= SERVER TAB =================
-local ServerTab = Window:Tab({Title = "Server", Icon = "server"})
-local ServerSection = QuickSection(ServerTab, "Servidor")
-ServerSection:Button({Title = "Server Hop", Callback = function()
+-- Server
+local ServerSec = ServerTab:AddSection({Name = "Servidor"})
+addButton(ServerTab, "Server Hop", function()
     local HttpService = game:GetService("HttpService")
     local jobId = HttpService:GenerateGUID(false)
     game:GetService("TeleportService"):TeleportToPlaceInstance(game.PlaceId, jobId, LocalPlayer)
-end})
-ServerSection:Button({Title = "Rejoin", Callback = function()
+end)
+addButton(ServerTab, "Rejoin", function()
     game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
-end})
-ServerSection:Button({Title = "Join Small Server", Callback = function()
+end)
+addButton(ServerTab, "Join Small Server", function()
     Notify("Server", "Procurando servidor pequeno...")
-end})
-ServerSection:Button({Title = "Join New Server", Callback = function()
+end)
+addButton(ServerTab, "Join New Server", function()
     game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
-end})
-ServerSection:Button({Title = "Copiar JobId", Callback = function()
+end)
+addButton(ServerTab, "Copiar JobId", function()
     setclipboard(game.JobId)
-    Notify("Server", "JobId copiado: " .. game.JobId)
-end})
-ServerSection:Label({Title = "Player Count: " .. #Players:GetPlayers()})
+    Notify("Server", "JobId copiado: "..game.JobId)
+end)
+ServerSec:AddLabel("Player Count: ".. #Players:GetPlayers())
 
--- ================= MISC TAB =================
-local MiscTab = Window:Tab({Title = "Misc", Icon = "gear"})
-local MiscSection = QuickSection(MiscTab, "Extras")
-MiscSection:Toggle({Title = "Anti-AFK", Default = false, Callback = function(v) Settings.AntiAFK2 = v end})
-MiscSection:Toggle({Title = "FPS Boost", Default = false, Callback = function(v) Settings.FPSBoost = v end})
-MiscSection:Toggle({Title = "Remove Textures", Default = false, Callback = function(v) Settings.RemoveTextures = v end})
-MiscSection:Toggle({Title = "Low Graphics", Default = false, Callback = function(v) Settings.LowGraphics = v end})
-MiscSection:Toggle({Title = "Chat Spy", Default = false, Callback = function(v) Settings.ChatSpy = v end})
-MiscSection:Toggle({Title = "Spinbot", Default = false, Callback = function(v) Settings.Spinbot = v end})
-MiscSection:Toggle({Title = "Fake Lag Visual", Default = false, Callback = function(v) Settings.FakeLagVisual = v end})
-local MiscFunSection = QuickSection(MiscTab, "Diversão")
-MiscFunSection:Dropdown({Title = "Emotes", Options = {"Dança 1", "Dança 2", "Aceno", "Rir"}, Default = "Dança 1", Callback = function(v) end})
-MiscFunSection:Button({Title = "Dançar", Callback = function()
+-- Misc
+local MiscSec = MiscTab:AddSection({Name = "Extras"})
+addToggle(MiscTab, "Anti-AFK", false, function(v) Settings.AntiAFK2 = v end)
+addToggle(MiscTab, "FPS Boost", false, function(v) Settings.FPSBoost = v end)
+addToggle(MiscTab, "Remove Textures", false, function(v) Settings.RemoveTextures = v end)
+addToggle(MiscTab, "Low Graphics", false, function(v) Settings.LowGraphics = v end)
+addToggle(MiscTab, "Chat Spy", false, function(v) Settings.ChatSpy = v end)
+addToggle(MiscTab, "Spinbot", false, function(v) Settings.Spinbot = v end)
+addToggle(MiscTab, "Fake Lag Visual", false, function(v) Settings.FakeLagVisual = v end)
+local MiscFun = MiscTab:AddSection({Name = "Diversão"})
+addDropdown(MiscTab, "Emotes", {"Dança 1", "Dança 2", "Aceno", "Rir"}, "Dança 1", function(v) end)
+addButton(MiscTab, "Dançar", function()
     local humanoid = getHumanoid(LocalPlayer)
     if humanoid then
-        -- Tenta carregar animação de dança genérica
         local anim = Instance.new("Animation")
         anim.AnimationId = "rbxassetid://507766388"
         local track = humanoid:LoadAnimation(anim)
         track:Play()
     end
-end})
-local MiscInfoSection = QuickSection(MiscTab, "Informações da Partida")
-MiscInfoSection:Label({Title = "Modo: Murder Mystery 2"})
-MiscInfoSection:Label({Title = "Jogadores: " .. #Players:GetPlayers()})
+end)
+local MiscInfo = MiscTab:AddSection({Name = "Informações da Partida"})
+MiscInfo:AddLabel("Modo: Murder Mystery 2")
+MiscInfo:AddLabel("Jogadores: ".. #Players:GetPlayers())
 
--- ================= MOBILE BUTTONS (GUI) =================
+-- ================= MOBILE BUTTONS =================
 local mobileScreenGui = nil
 local shootBtn, knifeBtn, tpBtn, aimBtn
 
-local function createMobileButtons()
+function createMobileButtons()
     removeMobileButtons()
     if not (Settings.ShootButton or Settings.ThrowKnifeButton or Settings.TPButton or Settings.AimButton) then return end
     mobileScreenGui = Instance.new("ScreenGui")
@@ -1202,11 +1089,8 @@ local function createMobileButtons()
         shootBtn.Font = Enum.Font.SourceSansBold
         shootBtn.TextSize = 16
         shootBtn.Parent = mobileScreenGui
-        shootBtn.MouseButton1Click:Connect(function()
-            shootGun()
-        end)
+        shootBtn.MouseButton1Click:Connect(function() shootGun() end)
     end
-    
     if Settings.ThrowKnifeButton then
         knifeBtn = Instance.new("TextButton")
         knifeBtn.Size = UDim2.fromOffset(80, 80)
@@ -1217,11 +1101,8 @@ local function createMobileButtons()
         knifeBtn.Font = Enum.Font.SourceSansBold
         knifeBtn.TextSize = 16
         knifeBtn.Parent = mobileScreenGui
-        knifeBtn.MouseButton1Click:Connect(function()
-            throwKnife()
-        end)
+        knifeBtn.MouseButton1Click:Connect(function() throwKnife() end)
     end
-    
     if Settings.TPButton then
         tpBtn = Instance.new("TextButton")
         tpBtn.Size = UDim2.fromOffset(80, 40)
@@ -1236,12 +1117,9 @@ local function createMobileButtons()
             local m = getMurderer()
             local root = getRoot(m)
             local localRoot = getRoot(LocalPlayer)
-            if root and localRoot then
-                localRoot.CFrame = root.CFrame
-            end
+            if root and localRoot then localRoot.CFrame = root.CFrame end
         end)
     end
-    
     if Settings.AimButton then
         aimBtn = Instance.new("TextButton")
         aimBtn.Size = UDim2.fromOffset(80, 40)
@@ -1261,17 +1139,25 @@ local function createMobileButtons()
     end
 end
 
-local function removeMobileButtons()
-    if mobileScreenGui then
-        mobileScreenGui:Destroy()
-        mobileScreenGui = nil
-    end
+function removeMobileButtons()
+    if mobileScreenGui then mobileScreenGui:Destroy() mobileScreenGui = nil end
 end
 
--- Atualizar botões quando toggles mudam
--- Já conectado nos callbacks relevantes
+-- ================= ATUALIZAR DROPDOWNS =================
+Players.PlayerAdded:Connect(function(p)
+    task.wait(0.5)
+    local names = getPlayerNames()
+    if playerDropdown then playerDropdown:Refresh(names, true) end
+    if playerDropdown2 then playerDropdown2:Refresh(names, true) end
+end)
+Players.PlayerRemoving:Connect(function(p)
+    task.wait(0.5)
+    local names = getPlayerNames()
+    if playerDropdown then playerDropdown:Refresh(names, true) end
+    if playerDropdown2 then playerDropdown2:Refresh(names, true) end
+end)
 
--- ================= MONITORAMENTO DE PAPÉIS (Alertas) =================
+-- ================= MONITORAMENTO DE PAPÉIS =================
 task.spawn(function()
     while true do
         task.wait(1)
@@ -1279,58 +1165,31 @@ task.spawn(function()
             for _, p in ipairs(Players:GetPlayers()) do
                 if p ~= LocalPlayer then
                     local role = getRole(p)
-                    if role then
-                        print(p.Name .. " é " .. role)
-                    end
+                    if role then print(p.Name.." é "..role) end
                 end
             end
         end
         if Settings.MurdererAlert then
             local m = getMurderer()
-            if m then
-                Notify("Alerta", m.Name .. " é o Assassino!")
-            end
+            if m then Notify("Alerta", m.Name.." é o Assassino!") end
         end
         if Settings.SheriffAlert then
             local s = getSheriff()
-            if s then
-                Notify("Alerta", s.Name .. " é o Xerife!")
-            end
+            if s then Notify("Alerta", s.Name.." é o Xerife!") end
         end
         if Settings.DetectMurderer then
             local m = getMurderer()
-            if m then
-                print("Murderer detectado:", m.Name)
-            end
+            if m then print("Murderer detectado:", m.Name) end
         end
         if Settings.DetectSheriff then
             local s = getSheriff()
-            if s then
-                print("Sheriff detectado:", s.Name)
-            end
+            if s then print("Sheriff detectado:", s.Name) end
         end
         if Settings.DetectHero then
             local h = getHero()
-            if h then
-                print("Hero detectado:", h.Name)
-            end
+            if h then print("Hero detectado:", h.Name) end
         end
     end
-end)
-
--- ================= ATUALIZAR DROPDOWNS =================
-Players.PlayerAdded:Connect(function(p)
-    local names = getPlayerNames()
-    if playerDropdown then playerDropdown:Refresh(names) end
-    if playerDropdown2 then playerDropdown2:Refresh(names) end
-    -- Atualizar outros dropdowns se necessário
-end)
-
-Players.PlayerRemoving:Connect(function(p)
-    task.wait(0.5)
-    local names = getPlayerNames()
-    if playerDropdown then playerDropdown:Refresh(names) end
-    if playerDropdown2 then playerDropdown2:Refresh(names) end
 end)
 
 -- ================= ANTI-AFK =================
@@ -1350,7 +1209,6 @@ task.spawn(function()
     while true do
         task.wait(5)
         if Settings.FPSBoost or Settings.LowGraphics then
-            -- Desativar texturas e gráficos
             for _, v in ipairs(Workspace:GetDescendants()) do
                 if v:IsA("BasePart") then
                     v.Material = Enum.Material.SmoothPlastic
@@ -1362,9 +1220,7 @@ task.spawn(function()
         end
         if Settings.RemoveTextures then
             for _, v in ipairs(Workspace:GetDescendants()) do
-                if v:IsA("BasePart") then
-                    v.TextureID = ""
-                end
+                if v:IsA("BasePart") then v.TextureID = "" end
             end
         end
     end
@@ -1376,9 +1232,7 @@ task.spawn(function()
         task.wait()
         if Settings.Spinbot and LocalPlayer.Character then
             local root = getRoot(LocalPlayer)
-            if root then
-                root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(10), 0)
-            end
+            if root then root.CFrame = root.CFrame * CFrame.Angles(0, math.rad(10), 0) end
         end
     end
 end)
@@ -1386,13 +1240,9 @@ end)
 -- ================= FAKE LAG VISUAL =================
 task.spawn(function()
     while true do
-        if Settings.FakeLagVisual then
-            task.wait(0.1)
-        else
-            task.wait()
-        end
+        if Settings.FakeLagVisual then task.wait(0.1) else task.wait() end
     end
 end)
 
 print("Souza Hub carregado com sucesso!")
-Notify("Souza Hub", "Script carregado!")
+Notify("Souza Hub", "Script carregado com sucesso!")
