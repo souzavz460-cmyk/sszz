@@ -1,6 +1,6 @@
 -- ============================================================
 -- UNIVERSAL SILENT AIM + RAYFIELD + ADONIS NEUTRALIZER
--- Neutralizer roda IMEDIATAMENTE, antes de tudo. Ultra seletivo.
+-- Fix: CalculateChance + neutralizer não quebra namecall
 -- ============================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -17,55 +17,35 @@ for _, fn in ipairs(REQUIRED) do
 end
 
 -- ============================================================
--- FASE 1: NEUTRALIZER — RODA AGORA, ANTES DE TUDO
--- Ultra seletivo: só hooka assinatura EXATA do Adonis
--- Nunca varre PlayerScripts/PlayerGui (câmera vive lá)
+-- FASE 1: NEUTRALIZER (SEGURO - RODA IMEDIATAMENTE)
 -- ============================================================
 local function neutralizeAdonis()
     local killed = 0
 
-    -- A) getgc SELETIVO — só hooka se tiver Detected + RLocked
+    -- A) getgc — SÓ hooka "Detected" (não mexe em namecall/index)
     local ok, gc = pcall(getgc, true)
     if ok and gc then
         for _, v in next, gc do
             if type(v) ~= "table" then continue end
-
             local d  = rawget(v, "Detected")
             local rl = rawget(v, "RLocked")
-
-            -- Só hooka Detected se RLocked estiver presente (assinatura Adonis)
             if type(d) == "function" and rl ~= nil then
                 pcall(hookfunction, d, function() return false end)
-                killed = killed + 1
-            end
-
-            -- indexInstance/namecallInstance: mesma checagem estrita
-            local ii = rawget(v, "indexInstance")
-            if type(ii) == "table" and #ii >= 2 and type(ii[2]) == "function" then
-                pcall(hookfunction, ii[2], function() return false end)
-                killed = killed + 1
-            end
-
-            local ni = rawget(v, "namecallInstance")
-            if type(ni) == "table" and #ni >= 2 and type(ni[2]) == "function" then
-                pcall(hookfunction, ni[2], function() return false end)
                 killed = killed + 1
             end
         end
     end
 
-    -- B) Mata scripts do Adonis por nome (SÓ ReplicatedStorage/ReplicatedFirst)
-    -- NUNCA toca em PlayerScripts ou PlayerGui (câmera e input vivem lá)
-    local safeRoots = {
+    -- B) Mata scripts do Adonis por nome (match exato)
+    local roots = {
         game:GetService("ReplicatedStorage"),
         game:GetService("ReplicatedFirst"),
     }
-    for _, root in ipairs(safeRoots) do
+    for _, root in ipairs(roots) do
         if not root then continue end
         for _, d in ipairs(root:GetDescendants()) do
             if d:IsA("LocalScript") or d:IsA("ModuleScript") then
                 local n = d.Name:lower()
-                -- Match EXATO de nomes do Adonis, sem "find" genérico
                 if n == "adonis" or n == "adonis_loader" or n == "adonis_client"
                 or n == "indexinstance" or n == "namecallinstance"
                 or n == "anticheat" or n == "anti_exploit" then
@@ -81,7 +61,6 @@ local function neutralizeAdonis()
     return killed
 end
 
--- RODA IMEDIATAMENTE. Sem delay, sem toggle, sem nada.
 local totalKilled = neutralizeAdonis()
 warn("[USA] Adonis neutralizado: " .. totalKilled)
 
@@ -161,10 +140,10 @@ local ExpectedArguments = {
     Raycast = { ArgCountRequired = 3, Args = {"Instance", "Vector3", "Vector3", "RaycastParams"} }
 }
 
+-- ✅ CalculateChance CORRIGIDA
 function CalculateChance(Percentage)
     Percentage = math.floor(Percentage)
-    local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
-    return chance <= Percentage / 100
+    return Random.new():NextNumber(0, 1) <= Percentage / 100
 end
 
 -- File handling
@@ -245,7 +224,6 @@ local function IsPlayerVisible(Player)
     return ObscuringObjects == 0
 end
 
--- getClosestPlayer idêntico ao original (sem cache)
 local function getClosestPlayer()
     if not SilentAimSettings.TargetPart then return end
     local Closest
@@ -296,7 +274,6 @@ local GeneralTab = Window:CreateTab("General", nil)
 local VisualsTab = Window:CreateTab("Visuals", nil)
 local ConfigTab  = Window:CreateTab("Config", nil)
 
--- ===== GENERAL =====
 GeneralTab:CreateSection("Aim")
 
 local ToggleEnabled
@@ -354,7 +331,6 @@ GeneralTab:CreateSlider({
     Callback = function(v) SilentAimSettings.HitChance = v end
 })
 
--- ===== VISUALS =====
 VisualsTab:CreateSection("FOV Circle")
 
 VisualsTab:CreateToggle({ Name = "Show FOV Circle", CurrentValue = false, Flag = "fov_Visible",
@@ -396,7 +372,6 @@ VisualsTab:CreateSlider({ Name = "Prediction Amount", Range = {0.165, 1}, Increm
         SilentAimSettings.MouseHitPredictionAmount = v
     end })
 
--- ===== CONFIG =====
 ConfigTab:CreateSection("Create Configuration")
 
 ConfigTab:CreateInput({ Name = "File Name", CurrentValue = "", PlaceholderText = "nome...",
@@ -468,7 +443,7 @@ resume(create(function()
 end))
 
 -- ============================================================
--- FASE 5: HOOKS DO SILENT AIM (IDÊNTICOS AO ORIGINAL)
+-- FASE 5: HOOKS DO SILENT AIM
 -- ============================================================
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
@@ -549,9 +524,6 @@ oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, Index)
     return oldIndex(self, Index)
 end))
 
--- ============================================================
--- NOTIFICAÇÃO FINAL
--- ============================================================
 Rayfield:Notify({
     Title = "Carregado",
     Content = "Neutralizado: " .. totalKilled .. " | Silent Aim pronto",
