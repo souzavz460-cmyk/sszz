@@ -1,6 +1,6 @@
 -- ============================================================
--- UNIVERSAL SILENT AIM + RAYFIELD — VERSÃO CORRIGIDA
--- Silent aim idêntico ao original. Neutralizer opcional.
+-- UNIVERSAL SILENT AIM + RAYFIELD + ADONIS NEUTRALIZER
+-- Neutralizer roda IMEDIATAMENTE, antes de tudo. Ultra seletivo.
 -- ============================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -9,7 +9,7 @@ if not syn or not protectgui then getgenv().protectgui = function() end end
 -- ============================================================
 -- FASE 0: EXECUTOR CHECK
 -- ============================================================
-local REQUIRED = {"hookmetamethod", "newcclosure", "checkcaller", "Drawing", "writefile"}
+local REQUIRED = {"hookmetamethod", "newcclosure", "checkcaller", "hookfunction", "getgc", "Drawing", "writefile"}
 for _, fn in ipairs(REQUIRED) do
     if not getgenv()[fn] and not (fn == "Drawing" and Drawing) then
         return warn("[USA] Executor incompatível: falta " .. fn)
@@ -17,7 +17,76 @@ for _, fn in ipairs(REQUIRED) do
 end
 
 -- ============================================================
--- FASE 1: SETTINGS
+-- FASE 1: NEUTRALIZER — RODA AGORA, ANTES DE TUDO
+-- Ultra seletivo: só hooka assinatura EXATA do Adonis
+-- Nunca varre PlayerScripts/PlayerGui (câmera vive lá)
+-- ============================================================
+local function neutralizeAdonis()
+    local killed = 0
+
+    -- A) getgc SELETIVO — só hooka se tiver Detected + RLocked
+    local ok, gc = pcall(getgc, true)
+    if ok and gc then
+        for _, v in next, gc do
+            if type(v) ~= "table" then continue end
+
+            local d  = rawget(v, "Detected")
+            local rl = rawget(v, "RLocked")
+
+            -- Só hooka Detected se RLocked estiver presente (assinatura Adonis)
+            if type(d) == "function" and rl ~= nil then
+                pcall(hookfunction, d, function() return false end)
+                killed = killed + 1
+            end
+
+            -- indexInstance/namecallInstance: mesma checagem estrita
+            local ii = rawget(v, "indexInstance")
+            if type(ii) == "table" and #ii >= 2 and type(ii[2]) == "function" then
+                pcall(hookfunction, ii[2], function() return false end)
+                killed = killed + 1
+            end
+
+            local ni = rawget(v, "namecallInstance")
+            if type(ni) == "table" and #ni >= 2 and type(ni[2]) == "function" then
+                pcall(hookfunction, ni[2], function() return false end)
+                killed = killed + 1
+            end
+        end
+    end
+
+    -- B) Mata scripts do Adonis por nome (SÓ ReplicatedStorage/ReplicatedFirst)
+    -- NUNCA toca em PlayerScripts ou PlayerGui (câmera e input vivem lá)
+    local safeRoots = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ReplicatedFirst"),
+    }
+    for _, root in ipairs(safeRoots) do
+        if not root then continue end
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("LocalScript") or d:IsA("ModuleScript") then
+                local n = d.Name:lower()
+                -- Match EXATO de nomes do Adonis, sem "find" genérico
+                if n == "adonis" or n == "adonis_loader" or n == "adonis_client"
+                or n == "indexinstance" or n == "namecallinstance"
+                or n == "anticheat" or n == "anti_exploit" then
+                    pcall(function()
+                        if d:IsA("LocalScript") then d.Disabled = true else d:Destroy() end
+                    end)
+                    killed = killed + 1
+                end
+            end
+        end
+    end
+
+    return killed
+end
+
+-- RODA IMEDIATAMENTE. Sem delay, sem toggle, sem nada.
+local totalKilled = neutralizeAdonis()
+warn("[USA] Adonis neutralizado: " .. totalKilled)
+
+-- ============================================================
+-- FASE 2: SETTINGS
 -- ============================================================
 local SilentAimSettings = {
     Enabled = false,
@@ -92,7 +161,6 @@ local ExpectedArguments = {
     Raycast = { ArgCountRequired = 3, Args = {"Instance", "Vector3", "Vector3", "RaycastParams"} }
 }
 
--- CalculateChance (idêntico ao original)
 function CalculateChance(Percentage)
     Percentage = math.floor(Percentage)
     local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
@@ -177,7 +245,7 @@ local function IsPlayerVisible(Player)
     return ObscuringObjects == 0
 end
 
--- getClosestPlayer SEM CACHE (idêntico ao original)
+-- getClosestPlayer idêntico ao original (sem cache)
 local function getClosestPlayer()
     if not SilentAimSettings.TargetPart then return end
     local Closest
@@ -209,61 +277,6 @@ local function getClosestPlayer()
 end
 
 -- ============================================================
--- FASE 2: NEUTRALIZER (FUNÇÃO, RODA SÓ QUANDO VOCÊ ATIVAR)
--- ============================================================
-local function neutralizeAdonis()
-    local killed = 0
-
-    local ok, gc = pcall(getgc, true)
-    if ok and gc then
-        for _, v in next, gc do
-            if type(v) == "table" then
-                -- Só hooka se tiver a assinatura EXATA do Adonis (Detected + RLocked)
-                local d = rawget(v, "Detected")
-                local rl = rawget(v, "RLocked")
-                if type(d) == "function" and (rl ~= nil) then
-                    pcall(hookfunction, d, function() return false end)
-                    killed = killed + 1
-                end
-                local ii = rawget(v, "indexInstance")
-                if type(ii) == "table" and #ii >= 2 and type(ii[2]) == "function" then
-                    pcall(hookfunction, ii[2], function() return false end)
-                    killed = killed + 1
-                end
-                local ni = rawget(v, "namecallInstance")
-                if type(ni) == "table" and #ni >= 2 and type(ni[2]) == "function" then
-                    pcall(hookfunction, ni[2], function() return false end)
-                    killed = killed + 1
-                end
-            end
-        end
-    end
-
-    local roots = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"),
-    }
-    for _, root in ipairs(roots) do
-        if not root then continue end
-        for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("LocalScript") or d:IsA("ModuleScript") then
-                local n = d.Name:lower()
-                if n:find("adonis") or n:find("anticheat") or n:find("indexinstance")
-                or n:find("namecallinstance") then
-                    pcall(function()
-                        if d:IsA("LocalScript") then d.Disabled = true else d:Destroy() end
-                    end)
-                    killed = killed + 1
-                end
-            end
-        end
-    end
-
-    return killed
-end
-
--- ============================================================
 -- FASE 3: RAYFIELD UI
 -- ============================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -281,7 +294,6 @@ local Window = Rayfield:CreateWindow({
 
 local GeneralTab = Window:CreateTab("General", nil)
 local VisualsTab = Window:CreateTab("Visuals", nil)
-local ExtraTab   = Window:CreateTab("Extra", nil)
 local ConfigTab  = Window:CreateTab("Config", nil)
 
 -- ===== GENERAL =====
@@ -384,27 +396,6 @@ VisualsTab:CreateSlider({ Name = "Prediction Amount", Range = {0.165, 1}, Increm
         SilentAimSettings.MouseHitPredictionAmount = v
     end })
 
--- ===== EXTRA (Neutralizer) =====
-ExtraTab:CreateSection("Adonis Neutralizer")
-
-ExtraTab:CreateParagraph({
-    Title = "⚠️ Aviso",
-    Content = "Só ative isso em jogos que usam Adonis. Pode travar a câmera em alguns jogos que não usam. Ative com o Aim desligado primeiro."
-})
-
-ExtraTab:CreateButton({
-    Name = "🛡️ Neutralizar Adonis (clique pra rodar)",
-    Callback = function()
-        local killed = neutralizeAdonis()
-        Rayfield:Notify({
-            Title = "Neutralizer",
-            Content = killed .. " detecção(ões) neutralizada(s)",
-            Duration = 5,
-            Image = 4483362458
-        })
-    end
-})
-
 -- ===== CONFIG =====
 ConfigTab:CreateSection("Create Configuration")
 
@@ -447,7 +438,7 @@ ConfigTab:CreateButton({ Name = "Load Configuration",
     end })
 
 -- ============================================================
--- FASE 4: RENDER LOOP (idêntico ao original)
+-- FASE 4: RENDER LOOP
 -- ============================================================
 resume(create(function()
     RenderStepped:Connect(function()
@@ -477,7 +468,7 @@ resume(create(function()
 end))
 
 -- ============================================================
--- FASE 5: HOOKS (IDÊNTICOS AO ORIGINAL)
+-- FASE 5: HOOKS DO SILENT AIM (IDÊNTICOS AO ORIGINAL)
 -- ============================================================
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
@@ -563,7 +554,7 @@ end))
 -- ============================================================
 Rayfield:Notify({
     Title = "Carregado",
-    Content = "Silent Aim pronto. Neutralizer é opcional (aba Extra).",
+    Content = "Neutralizado: " .. totalKilled .. " | Silent Aim pronto",
     Duration = 6,
     Image = 4483362458
 })
