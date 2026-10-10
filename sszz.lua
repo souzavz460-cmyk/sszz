@@ -1,6 +1,6 @@
 -- ============================================================
--- UNIVERSAL SILENT AIM + RAYFIELD + ADONIS NEUTRALIZER
--- Fix: CalculateChance + neutralizer não quebra namecall
+-- UNIVERSAL SILENT AIM + RAYFIELD + ADONIS NEUTRALIZER + FPS BOOST
+-- v3 — neutralizer async, cache por frame, FPS Boost
 -- ============================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -17,26 +17,13 @@ for _, fn in ipairs(REQUIRED) do
 end
 
 -- ============================================================
--- FASE 1: NEUTRALIZER (SEGURO - RODA IMEDIATAMENTE)
+-- FASE 1: NEUTRALIZER (ASYNC — NÃO TRAVA O JOGO)
 -- ============================================================
-local function neutralizeAdonis()
+local neutralizerStats = { detectHook = 0, scriptsKilled = 0, done = false }
+
+-- PARTE A: Mata scripts por nome (rápido, sync)
+local function killScriptsByName()
     local killed = 0
-
-    -- A) getgc — SÓ hooka "Detected" (não mexe em namecall/index)
-    local ok, gc = pcall(getgc, true)
-    if ok and gc then
-        for _, v in next, gc do
-            if type(v) ~= "table" then continue end
-            local d  = rawget(v, "Detected")
-            local rl = rawget(v, "RLocked")
-            if type(d) == "function" and rl ~= nil then
-                pcall(hookfunction, d, function() return false end)
-                killed = killed + 1
-            end
-        end
-    end
-
-    -- B) Mata scripts do Adonis por nome (match exato)
     local roots = {
         game:GetService("ReplicatedStorage"),
         game:GetService("ReplicatedFirst"),
@@ -57,12 +44,40 @@ local function neutralizeAdonis()
             end
         end
     end
-
     return killed
 end
 
-local totalKilled = neutralizeAdonis()
-warn("[USA] Adonis neutralizado: " .. totalKilled)
+-- PARTE B: getgc async (varre Detected em coroutine, cede a cada 300 itens)
+local function hookDetectedAsync()
+    task.spawn(function()
+        local ok, gc = pcall(getgc, true)
+        if not ok or not gc then
+            neutralizerStats.done = true
+            return
+        end
+        local count = 0
+        for _, v in next, gc do
+            count = count + 1
+            if count % 300 == 0 then task.wait() end -- cede a CPU, não trava
+
+            if type(v) == "table" then
+                local d  = rawget(v, "Detected")
+                local rl = rawget(v, "RLocked")
+                if type(d) == "function" and rl ~= nil then
+                    pcall(hookfunction, d, function() return false end)
+                    neutralizerStats.detectHook = neutralizerStats.detectHook + 1
+                end
+            end
+        end
+        neutralizerStats.done = true
+        warn("[USA] Async getgc finalizado. Detected hookados: " .. neutralizerStats.detectHook)
+    end)
+end
+
+-- RODA IMEDIATAMENTE
+neutralizerStats.scriptsKilled = killScriptsByName()
+hookDetectedAsync()
+warn("[USA] Scripts killed: " .. neutralizerStats.scriptsKilled .. " | getgc em background")
 
 -- ============================================================
 -- FASE 2: SETTINGS
@@ -93,7 +108,7 @@ local SelectedFile, FileToSave = "", ""
 local Camera = workspace.CurrentCamera
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local GuiService = game:GetService("GuiService")
+local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 
@@ -140,7 +155,6 @@ local ExpectedArguments = {
     Raycast = { ArgCountRequired = 3, Args = {"Instance", "Vector3", "Vector3", "RaycastParams"} }
 }
 
--- ✅ CalculateChance CORRIGIDA
 function CalculateChance(Percentage)
     Percentage = math.floor(Percentage)
     return Random.new():NextNumber(0, 1) <= Percentage / 100
@@ -212,22 +226,34 @@ local function getMousePosition()
 end
 
 local function IsPlayerVisible(Player)
-    local PlayerCharacter = Player.Character
-    local LocalPlayerCharacter = LocalPlayer.Character
-    if not (PlayerCharacter or LocalPlayerCharacter) then return end
-    local PlayerRoot = FindFirstChild(PlayerCharacter, SilentAimSettings.TargetPart)
-                       or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
-    if not PlayerRoot then return end
-    local CastPoints = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}
-    local IgnoreList = {LocalPlayerCharacter, PlayerCharacter}
-    local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
-    return ObscuringObjects == 0
+    local PC, LPC = Player.Character, LocalPlayer.Character
+    if not (PC and LPC) then return false end
+    local Root = FindFirstChild(PC, SilentAimSettings.TargetPart)
+                 or FindFirstChild(PC, "HumanoidRootPart")
+    if not Root then return false end
+    local ok, objs = pcall(function()
+        return Camera:GetPartsObscuringTarget({Root.Position, LPC, PC}, {LPC, PC})
+    end)
+    return ok and #objs == 0
 end
 
-local function getClosestPlayer()
-    if not SilentAimSettings.TargetPart then return end
+-- ============================================================
+-- ✅ CACHE POR FRAME — resolve o FPS residual baixo
+-- Antes: getClosestPlayer() era chamado em CADA raycast (dezenas/frame)
+-- Agora: 1x por frame no máximo
+-- ============================================================
+local currentFrame = 0
+RunService.Heartbeat:Connect(function() currentFrame = currentFrame + 1 end)
+
+local cachedTarget = nil
+local cachedFrame = -1
+
+local function computeClosestPlayer()
+    if not SilentAimSettings.TargetPart then return nil end
     local Closest
     local DistanceToMouse
+    local mousePos = getMousePosition()
+
     for _, Player in next, GetPlayers(Players) do
         if Player == LocalPlayer then continue end
         if SilentAimSettings.TeamCheck and Player.Team == LocalPlayer.Team then continue end
@@ -236,14 +262,16 @@ local function getClosestPlayer()
         if not Character then continue end
         if SilentAimSettings.VisibleCheck and not IsPlayerVisible(Player) then continue end
 
-        local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
-        local Humanoid = FindFirstChild(Character, "Humanoid")
-        if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
+        local HRP = FindFirstChild(Character, "HumanoidRootPart")
+        if not HRP then continue end
 
-        local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
+        local Hum = FindFirstChild(Character, "Humanoid")
+        if not Hum or Hum.Health <= 0 then continue end
+
+        local ScreenPosition, OnScreen = getPositionOnScreen(HRP.Position)
         if not OnScreen then continue end
 
-        local Distance = (getMousePosition() - ScreenPosition).Magnitude
+        local Distance = (mousePos - ScreenPosition).Magnitude
         if Distance <= (DistanceToMouse or SilentAimSettings.FOVRadius or 2000) then
             Closest = ((SilentAimSettings.TargetPart == "Random"
                 and Character[ValidTargetParts[math.random(1, #ValidTargetParts)]])
@@ -254,8 +282,104 @@ local function getClosestPlayer()
     return Closest
 end
 
+local function getClosestPlayer()
+    if cachedFrame == currentFrame then
+        return cachedTarget
+    end
+    cachedFrame = currentFrame
+    cachedTarget = computeClosestPlayer()
+    return cachedTarget
+end
+
 -- ============================================================
--- FASE 3: RAYFIELD UI
+-- FASE 3: FPS BOOST FUNCTIONS
+-- ============================================================
+local FPSState = {
+    enabled = false,
+    originalLighting = nil,
+}
+
+local function applyFPSBoost()
+    if FPSState.enabled then return end
+    FPSState.enabled = true
+
+    -- Salva estado original
+    FPSState.originalLighting = {
+        GlobalShadows = Lighting.GlobalShadows,
+        FogEnd = Lighting.FogEnd,
+        Brightness = Lighting.Brightness,
+        EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+        EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
+    }
+
+    -- Lighting
+    pcall(function()
+        Lighting.GlobalShadows = false
+        Lighting.FogEnd = 100000
+        Lighting.Brightness = 2
+        Lighting.EnvironmentDiffuseScale = 0
+        Lighting.EnvironmentSpecularScale = 0
+    end)
+
+    -- Terrain
+    pcall(function()
+        local t = workspace:FindFirstChildOfClass("Terrain")
+        if t then
+            t.WaterWaveSize = 0
+            t.WaterWaveSpeed = 0
+            t.WaterReflectance = 0
+            t.WaterTransparency = 0
+        end
+    end)
+
+    -- Remove effects pesados
+    task.spawn(function()
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke")
+            or v:IsA("Fire") or v:IsA("Sparkles") then
+                pcall(function() v.Enabled = false end)
+            end
+            if v:IsA("Decal") or v:IsA("Texture") then
+                pcall(function() v.Transparency = 1 end)
+            end
+            if v:IsA("PostEffect") or v:IsA("BlurEffect")
+            or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect") then
+                pcall(function() v.Enabled = false end)
+            end
+        end
+    end)
+
+    -- Monitor: novos efeitos que spawnarem também são removidos
+    task.spawn(function()
+        while FPSState.enabled do
+            task.wait(2)
+            if not FPSState.enabled then break end
+            for _, v in ipairs(workspace:GetDescendants()) do
+                if v:IsA("ParticleEmitter") and v.Enabled then
+                    pcall(function() v.Enabled = false end)
+                end
+            end
+        end
+    end)
+end
+
+local function restoreFPSBoost()
+    if not FPSState.enabled then return end
+    FPSState.enabled = false
+    local o = FPSState.originalLighting
+    if o then
+        pcall(function()
+            Lighting.GlobalShadows = o.GlobalShadows
+            Lighting.FogEnd = o.FogEnd
+            Lighting.Brightness = o.Brightness
+            Lighting.EnvironmentDiffuseScale = o.EnvironmentDiffuseScale
+            Lighting.EnvironmentSpecularScale = o.EnvironmentSpecularScale
+        end)
+    end
+end
+
+-- ============================================================
+-- FASE 4: RAYFIELD UI
 -- ============================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
@@ -272,8 +396,10 @@ local Window = Rayfield:CreateWindow({
 
 local GeneralTab = Window:CreateTab("General", nil)
 local VisualsTab = Window:CreateTab("Visuals", nil)
+local FPSTab     = Window:CreateTab("FPS", nil)
 local ConfigTab  = Window:CreateTab("Config", nil)
 
+-- ===== GENERAL =====
 GeneralTab:CreateSection("Aim")
 
 local ToggleEnabled
@@ -331,6 +457,7 @@ GeneralTab:CreateSlider({
     Callback = function(v) SilentAimSettings.HitChance = v end
 })
 
+-- ===== VISUALS =====
 VisualsTab:CreateSection("FOV Circle")
 
 VisualsTab:CreateToggle({ Name = "Show FOV Circle", CurrentValue = false, Flag = "fov_Visible",
@@ -372,6 +499,91 @@ VisualsTab:CreateSlider({ Name = "Prediction Amount", Range = {0.165, 1}, Increm
         SilentAimSettings.MouseHitPredictionAmount = v
     end })
 
+-- ===== FPS BOOST =====
+FPSTab:CreateSection("FPS Boost")
+
+FPSTab:CreateToggle({
+    Name = "Enable FPS Boost",
+    CurrentValue = false,
+    Flag = "fps_Enabled",
+    Callback = function(v)
+        if v then
+            applyFPSBoost()
+            Rayfield:Notify({
+                Title = "FPS Boost",
+                Content = "Ativado. Efeitos, sombras e texturas removidos.",
+                Duration = 4,
+                Image = 4483362458
+            })
+        else
+            restoreFPSBoost()
+            Rayfield:Notify({
+                Title = "FPS Boost",
+                Content = "Desativado. Iluminação restaurada.",
+                Duration = 4,
+                Image = 4483362458
+            })
+        end
+    end
+})
+
+FPSTab:CreateButton({
+    Name = "🔥 Limpar Efeitos (remover partículas do mapa agora)",
+    Callback = function()
+        local removed = 0
+        for _, v in ipairs(workspace:GetDescendants()) do
+            if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Smoke")
+            or v:IsA("Fire") or v:IsA("Sparkles") then
+                pcall(function() v.Enabled = false end)
+                removed = removed + 1
+            end
+        end
+        Rayfield:Notify({
+            Title = "FPS",
+            Content = removed .. " efeitos desligados",
+            Duration = 4,
+            Image = 4483362458
+        })
+    end
+})
+
+FPSTab:CreateButton({
+    Name = "⬇️ Qualidade Baixa (MeshPart Level01)",
+    Callback = function()
+        pcall(function()
+            settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level01
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        end)
+        Rayfield:Notify({ Title = "FPS", Content = "Qualidade reduzida", Duration = 3, Image = 4483362458 })
+    end
+})
+
+FPSTab:CreateButton({
+    Name = "⬆️ Restaurar Qualidade",
+    Callback = function()
+        pcall(function()
+            settings().Rendering.MeshPartDetailLevel = Enum.MeshPartDetailLevel.Level04
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+        end)
+        Rayfield:Notify({ Title = "FPS", Content = "Qualidade restaurada", Duration = 3, Image = 4483362458 })
+    end
+})
+
+FPSTab:CreateSection("Neutralizer Status")
+
+FPSTab:CreateLabel("Scripts killed: " .. neutralizerStats.scriptsKilled)
+
+FPSTab:CreateButton({
+    Name = "Ver status do getgc async no console",
+    Callback = function()
+        print("=== NEUTRALIZER STATUS ===")
+        print("Scripts killed: " .. neutralizerStats.scriptsKilled)
+        print("Detected hookados: " .. neutralizerStats.detectHook)
+        print("getgc finalizado: " .. tostring(neutralizerStats.done))
+    end
+})
+
+-- ===== CONFIG =====
 ConfigTab:CreateSection("Create Configuration")
 
 ConfigTab:CreateInput({ Name = "File Name", CurrentValue = "", PlaceholderText = "nome...",
@@ -413,7 +625,7 @@ ConfigTab:CreateButton({ Name = "Load Configuration",
     end })
 
 -- ============================================================
--- FASE 4: RENDER LOOP
+-- FASE 5: RENDER LOOP
 -- ============================================================
 resume(create(function()
     RenderStepped:Connect(function()
@@ -443,59 +655,55 @@ resume(create(function()
 end))
 
 -- ============================================================
--- FASE 5: HOOKS DO SILENT AIM
+-- FASE 6: HOOKS DO SILENT AIM
 -- ============================================================
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
     local Method = getnamecallmethod()
     local Arguments = {...}
     local self = Arguments[1]
-    local chance = CalculateChance(SilentAimSettings.HitChance)
 
-    if SilentAimSettings.Enabled and self == workspace and not checkcaller() and chance == true then
-        if Method == "FindPartOnRayWithIgnoreList" and SilentAimSettings.SilentAimMethod == Method then
-            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
-                local A_Ray = Arguments[2]
-                local HitPart = getClosestPlayer()
-                if HitPart then
-                    local Origin = A_Ray.Origin
-                    local Direction = getDirection(Origin, HitPart.Position)
-                    Arguments[2] = Ray.new(Origin, Direction)
-                    return oldNamecall(unpack(Arguments))
+    -- ✅ Checa Enabled PRIMEIRO (economia de CPU)
+    if SilentAimSettings.Enabled and self == workspace and not checkcaller() then
+        if CalculateChance(SilentAimSettings.HitChance) then
+            if Method == "FindPartOnRayWithIgnoreList" and SilentAimSettings.SilentAimMethod == Method then
+                if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
+                    local HitPart = getClosestPlayer()
+                    if HitPart then
+                        local A_Ray = Arguments[2]
+                        Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                        return oldNamecall(unpack(Arguments))
+                    end
                 end
-            end
 
-        elseif Method == "FindPartOnRayWithWhitelist" and SilentAimSettings.SilentAimMethod == Method then
-            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
-                local A_Ray = Arguments[2]
-                local HitPart = getClosestPlayer()
-                if HitPart then
-                    local Origin = A_Ray.Origin
-                    local Direction = getDirection(Origin, HitPart.Position)
-                    Arguments[2] = Ray.new(Origin, Direction)
-                    return oldNamecall(unpack(Arguments))
+            elseif Method == "FindPartOnRayWithWhitelist" and SilentAimSettings.SilentAimMethod == Method then
+                if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
+                    local HitPart = getClosestPlayer()
+                    if HitPart then
+                        local A_Ray = Arguments[2]
+                        Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                        return oldNamecall(unpack(Arguments))
+                    end
                 end
-            end
 
-        elseif (Method == "FindPartOnRay" or Method == "findPartOnRay") and SilentAimSettings.SilentAimMethod:lower() == Method:lower() then
-            if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
-                local A_Ray = Arguments[2]
-                local HitPart = getClosestPlayer()
-                if HitPart then
-                    local Origin = A_Ray.Origin
-                    local Direction = getDirection(Origin, HitPart.Position)
-                    Arguments[2] = Ray.new(Origin, Direction)
-                    return oldNamecall(unpack(Arguments))
+            elseif (Method == "FindPartOnRay" or Method == "findPartOnRay")
+                and SilentAimSettings.SilentAimMethod:lower() == Method:lower() then
+                if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
+                    local HitPart = getClosestPlayer()
+                    if HitPart then
+                        local A_Ray = Arguments[2]
+                        Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                        return oldNamecall(unpack(Arguments))
+                    end
                 end
-            end
 
-        elseif Method == "Raycast" and SilentAimSettings.SilentAimMethod == Method then
-            if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
-                local A_Origin = Arguments[2]
-                local HitPart = getClosestPlayer()
-                if HitPart then
-                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
-                    return oldNamecall(unpack(Arguments))
+            elseif Method == "Raycast" and SilentAimSettings.SilentAimMethod == Method then
+                if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
+                    local HitPart = getClosestPlayer()
+                    if HitPart then
+                        Arguments[3] = getDirection(Arguments[2], HitPart.Position)
+                        return oldNamecall(unpack(Arguments))
+                    end
                 end
             end
         end
@@ -506,27 +714,33 @@ end))
 local oldIndex = nil
 oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, Index)
     if self == Mouse and not checkcaller() and SilentAimSettings.Enabled
-       and SilentAimSettings.SilentAimMethod == "Mouse.Hit/Target" and getClosestPlayer() then
+       and SilentAimSettings.SilentAimMethod == "Mouse.Hit/Target" then
         local HitPart = getClosestPlayer()
-        if Index == "Target" or Index == "target" then
-            return HitPart
-        elseif Index == "Hit" or Index == "hit" then
-            return ((SilentAimSettings.MouseHitPrediction and (HitPart.CFrame + (HitPart.Velocity * PredictionAmount)))
-                or (not SilentAimSettings.MouseHitPrediction and HitPart.CFrame))
-        elseif Index == "X" or Index == "x" then
-            return self.X
-        elseif Index == "Y" or Index == "y" then
-            return self.Y
-        elseif Index == "UnitRay" then
-            return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
+        if HitPart then
+            if Index == "Target" or Index == "target" then
+                return HitPart
+            elseif Index == "Hit" or Index == "hit" then
+                return SilentAimSettings.MouseHitPrediction
+                    and (HitPart.CFrame + (HitPart.Velocity * PredictionAmount))
+                    or HitPart.CFrame
+            elseif Index == "X" or Index == "x" then
+                return self.X
+            elseif Index == "Y" or Index == "y" then
+                return self.Y
+            elseif Index == "UnitRay" then
+                return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
+            end
         end
     end
     return oldIndex(self, Index)
 end))
 
+-- ============================================================
+-- NOTIFICAÇÃO FINAL
+-- ============================================================
 Rayfield:Notify({
     Title = "Carregado",
-    Content = "Neutralizado: " .. totalKilled .. " | Silent Aim pronto",
+    Content = "Neutralizer async rodando | Silent Aim pronto | FPS tab ativa",
     Duration = 6,
     Image = 4483362458
 })
