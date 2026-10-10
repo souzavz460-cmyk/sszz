@@ -1,6 +1,6 @@
 -- ============================================================
--- UNIVERSAL SILENT AIM + RAYFIELD + ADONIS NEUTRALIZER
--- Versão única, sem duplicação, sem lag, sem loop infinito
+-- UNIVERSAL SILENT AIM + RAYFIELD — VERSÃO CORRIGIDA
+-- Silent aim idêntico ao original. Neutralizer opcional.
 -- ============================================================
 
 if not game:IsLoaded() then game.Loaded:Wait() end
@@ -9,7 +9,7 @@ if not syn or not protectgui then getgenv().protectgui = function() end end
 -- ============================================================
 -- FASE 0: EXECUTOR CHECK
 -- ============================================================
-local REQUIRED = {"hookmetamethod", "newcclosure", "checkcaller", "hookfunction", "getgc", "Drawing", "writefile"}
+local REQUIRED = {"hookmetamethod", "newcclosure", "checkcaller", "Drawing", "writefile"}
 for _, fn in ipairs(REQUIRED) do
     if not getgenv()[fn] and not (fn == "Drawing" and Drawing) then
         return warn("[USA] Executor incompatível: falta " .. fn)
@@ -17,76 +17,7 @@ for _, fn in ipairs(REQUIRED) do
 end
 
 -- ============================================================
--- FASE 1: ADONIS NEUTRALIZER (VERSÃO LEVE - RODA 2X SÓ)
--- ============================================================
-local hookedFuncs = {}
-local function safeHook(fn)
-    if hookedFuncs[fn] then return false end
-    hookedFuncs[fn] = true
-    pcall(hookfunction, fn, function() return false end)
-    return true
-end
-
-local function neutralizeAdonis()
-    local killed = 0
-
-    -- A) getgc: mata Detected/indexInstance/namecallInstance
-    local ok, gc = pcall(getgc, true)
-    if ok and gc then
-        for _, v in next, gc do
-            if type(v) == "table" then
-                local d = rawget(v, "Detected")
-                if type(d) == "function" and safeHook(d) then killed = killed + 1 end
-
-                local ii = rawget(v, "indexInstance")
-                if type(ii) == "table" and #ii >= 2 and type(ii[2]) == "function" and safeHook(ii[2]) then
-                    killed = killed + 1
-                end
-
-                local ni = rawget(v, "namecallInstance")
-                if type(ni) == "table" and #ni >= 2 and type(ni[2]) == "function" and safeHook(ni[2]) then
-                    killed = killed + 1
-                end
-            end
-        end
-    end
-
-    -- B) Desabilita scripts de anti-cheat
-    local roots = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("ReplicatedFirst"),
-        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"),
-        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui"),
-    }
-    for _, root in ipairs(roots) do
-        if not root then continue end
-        for _, d in ipairs(root:GetDescendants()) do
-            if d:IsA("LocalScript") or d:IsA("ModuleScript") or d:IsA("Script") then
-                local n = d.Name:lower()
-                if n:find("adonis") or n:find("anticheat") or n:find("detector")
-                or n:find("indexinstance") or n:find("namecallinstance") then
-                    pcall(function()
-                        if d:IsA("LocalScript") then d.Disabled = true else d:Destroy() end
-                    end)
-                    killed = killed + 1
-                end
-            end
-        end
-    end
-
-    return killed
-end
-
--- Roda 1x agora + 1x depois de 5s. SEM LOOP.
-local totalKilled = neutralizeAdonis()
-task.delay(5, function()
-    totalKilled = totalKilled + neutralizeAdonis()
-    warn("[USA] Re-scan total: " .. totalKilled)
-end)
-warn("[USA] Adonis neutralizado: " .. totalKilled)
-
--- ============================================================
--- FASE 2: SETTINGS DO SILENT AIM
+-- FASE 1: SETTINGS
 -- ============================================================
 local SilentAimSettings = {
     Enabled = false,
@@ -111,37 +42,29 @@ local MainFileName = "UniversalSilentAim"
 local SelectedFile, FileToSave = "", ""
 
 -- Serviços
-local Players        = game:GetService("Players")
-local RunService     = game:GetService("RunService")
-local UserInput      = game:GetService("UserInputService")
-local HttpService    = game:GetService("HttpService")
-local LocalPlayer    = Players.LocalPlayer
-
--- Camera dinâmica (evita erro ao respawnar)
 local Camera = workspace.CurrentCamera
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    Camera = workspace.CurrentCamera
-end)
-workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
-    if workspace.CurrentCamera then Camera = workspace.CurrentCamera end
-end)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local GuiService = game:GetService("GuiService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
+local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
-local GetPlayers       = Players.GetPlayers
-local WorldToScreen    = function(cam, pos) return cam:WorldToScreenPoint(pos) end
-local WorldToViewport  = function(cam, pos) return cam:WorldToViewportPoint(pos) end
-local FindFirstChild   = game.FindFirstChild
-local RenderStepped    = RunService.RenderStepped
-local GetMouseLocation = UserInput.GetMouseLocation
+local GetPlayers = Players.GetPlayers
+local WorldToScreen = Camera.WorldToScreenPoint
+local WorldToViewportPoint = Camera.WorldToViewportPoint
+local GetPartsObscuringTarget = Camera.GetPartsObscuringTarget
+local FindFirstChild = game.FindFirstChild
+local RenderStepped = RunService.RenderStepped
+local GetMouseLocation = UserInputService.GetMouseLocation
 
 local resume = coroutine.resume
 local create = coroutine.create
 
 local ValidTargetParts = {"Head", "HumanoidRootPart"}
 local PredictionAmount = 0.165
-local rng = Random.new()
 
 -- Drawings
 local mouse_box = Drawing.new("Square")
@@ -165,13 +88,15 @@ fov_circle.Color = SilentAimSettings.FOVColor
 local ExpectedArguments = {
     FindPartOnRayWithIgnoreList = { ArgCountRequired = 3, Args = {"Instance", "Ray", "table", "boolean", "boolean"} },
     FindPartOnRayWithWhitelist = { ArgCountRequired = 3, Args = {"Instance", "Ray", "table", "boolean"} },
-    FindPartOnRay              = { ArgCountRequired = 2, Args = {"Instance", "Ray", "Instance", "boolean", "boolean"} },
-    Raycast                    = { ArgCountRequired = 3, Args = {"Instance", "Vector3", "Vector3", "RaycastParams"} }
+    FindPartOnRay = { ArgCountRequired = 2, Args = {"Instance", "Ray", "Instance", "boolean", "boolean"} },
+    Raycast = { ArgCountRequired = 3, Args = {"Instance", "Vector3", "Vector3", "RaycastParams"} }
 }
 
+-- CalculateChance (idêntico ao original)
 function CalculateChance(Percentage)
     Percentage = math.floor(Percentage)
-    return rng:NextNumber(0, 1) <= Percentage / 100
+    local chance = math.floor(Random.new().NextNumber(Random.new(), 0, 1) * 100) / 100
+    return chance <= Percentage / 100
 end
 
 -- File handling
@@ -236,30 +161,27 @@ local function getDirection(Origin, Position)
 end
 
 local function getMousePosition()
-    return GetMouseLocation(UserInput)
+    return GetMouseLocation(UserInputService)
 end
 
 local function IsPlayerVisible(Player)
-    local PC, LPC = Player.Character, LocalPlayer.Character
-    if not (PC and LPC) then return false end
-    local Root = FindFirstChild(PC, SilentAimSettings.TargetPart)
-                 or FindFirstChild(PC, "HumanoidRootPart")
-    if not Root then return false end
-    local ok, objs = pcall(function()
-        return Camera:GetPartsObscuringTarget({Root.Position, LPC, PC}, {LPC, PC})
-    end)
-    return ok and #objs == 0
+    local PlayerCharacter = Player.Character
+    local LocalPlayerCharacter = LocalPlayer.Character
+    if not (PlayerCharacter or LocalPlayerCharacter) then return end
+    local PlayerRoot = FindFirstChild(PlayerCharacter, SilentAimSettings.TargetPart)
+                       or FindFirstChild(PlayerCharacter, "HumanoidRootPart")
+    if not PlayerRoot then return end
+    local CastPoints = {PlayerRoot.Position, LocalPlayerCharacter, PlayerCharacter}
+    local IgnoreList = {LocalPlayerCharacter, PlayerCharacter}
+    local ObscuringObjects = #GetPartsObscuringTarget(Camera, CastPoints, IgnoreList)
+    return ObscuringObjects == 0
 end
 
--- Cache de alvo
-local cachedTarget, cachedFrame = nil, 0
+-- getClosestPlayer SEM CACHE (idêntico ao original)
 local function getClosestPlayer()
-    if not SilentAimSettings.TargetPart then return nil end
-    local now = os.clock()
-    if cachedFrame == now then return cachedTarget end
-    cachedFrame = now
-
-    local Closest, DistanceToMouse
+    if not SilentAimSettings.TargetPart then return end
+    local Closest
+    local DistanceToMouse
     for _, Player in next, GetPlayers(Players) do
         if Player == LocalPlayer then continue end
         if SilentAimSettings.TeamCheck and Player.Team == LocalPlayer.Team then continue end
@@ -268,11 +190,11 @@ local function getClosestPlayer()
         if not Character then continue end
         if SilentAimSettings.VisibleCheck and not IsPlayerVisible(Player) then continue end
 
-        local HRP = FindFirstChild(Character, "HumanoidRootPart")
-        local Hum = FindFirstChild(Character, "Humanoid")
-        if not HRP or not Hum or Hum.Health <= 0 then continue end
+        local HumanoidRootPart = FindFirstChild(Character, "HumanoidRootPart")
+        local Humanoid = FindFirstChild(Character, "Humanoid")
+        if not HumanoidRootPart or not Humanoid or Humanoid.Health <= 0 then continue end
 
-        local ScreenPosition, OnScreen = getPositionOnScreen(HRP.Position)
+        local ScreenPosition, OnScreen = getPositionOnScreen(HumanoidRootPart.Position)
         if not OnScreen then continue end
 
         local Distance = (getMousePosition() - ScreenPosition).Magnitude
@@ -283,8 +205,62 @@ local function getClosestPlayer()
             DistanceToMouse = Distance
         end
     end
-    cachedTarget = Closest
     return Closest
+end
+
+-- ============================================================
+-- FASE 2: NEUTRALIZER (FUNÇÃO, RODA SÓ QUANDO VOCÊ ATIVAR)
+-- ============================================================
+local function neutralizeAdonis()
+    local killed = 0
+
+    local ok, gc = pcall(getgc, true)
+    if ok and gc then
+        for _, v in next, gc do
+            if type(v) == "table" then
+                -- Só hooka se tiver a assinatura EXATA do Adonis (Detected + RLocked)
+                local d = rawget(v, "Detected")
+                local rl = rawget(v, "RLocked")
+                if type(d) == "function" and (rl ~= nil) then
+                    pcall(hookfunction, d, function() return false end)
+                    killed = killed + 1
+                end
+                local ii = rawget(v, "indexInstance")
+                if type(ii) == "table" and #ii >= 2 and type(ii[2]) == "function" then
+                    pcall(hookfunction, ii[2], function() return false end)
+                    killed = killed + 1
+                end
+                local ni = rawget(v, "namecallInstance")
+                if type(ni) == "table" and #ni >= 2 and type(ni[2]) == "function" then
+                    pcall(hookfunction, ni[2], function() return false end)
+                    killed = killed + 1
+                end
+            end
+        end
+    end
+
+    local roots = {
+        game:GetService("ReplicatedStorage"),
+        game:GetService("ReplicatedFirst"),
+        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"),
+    }
+    for _, root in ipairs(roots) do
+        if not root then continue end
+        for _, d in ipairs(root:GetDescendants()) do
+            if d:IsA("LocalScript") or d:IsA("ModuleScript") then
+                local n = d.Name:lower()
+                if n:find("adonis") or n:find("anticheat") or n:find("indexinstance")
+                or n:find("namecallinstance") then
+                    pcall(function()
+                        if d:IsA("LocalScript") then d.Disabled = true else d:Destroy() end
+                    end)
+                    killed = killed + 1
+                end
+            end
+        end
+    end
+
+    return killed
 end
 
 -- ============================================================
@@ -305,6 +281,7 @@ local Window = Rayfield:CreateWindow({
 
 local GeneralTab = Window:CreateTab("General", nil)
 local VisualsTab = Window:CreateTab("Visuals", nil)
+local ExtraTab   = Window:CreateTab("Extra", nil)
 local ConfigTab  = Window:CreateTab("Config", nil)
 
 -- ===== GENERAL =====
@@ -407,6 +384,27 @@ VisualsTab:CreateSlider({ Name = "Prediction Amount", Range = {0.165, 1}, Increm
         SilentAimSettings.MouseHitPredictionAmount = v
     end })
 
+-- ===== EXTRA (Neutralizer) =====
+ExtraTab:CreateSection("Adonis Neutralizer")
+
+ExtraTab:CreateParagraph({
+    Title = "⚠️ Aviso",
+    Content = "Só ative isso em jogos que usam Adonis. Pode travar a câmera em alguns jogos que não usam. Ative com o Aim desligado primeiro."
+})
+
+ExtraTab:CreateButton({
+    Name = "🛡️ Neutralizar Adonis (clique pra rodar)",
+    Callback = function()
+        local killed = neutralizeAdonis()
+        Rayfield:Notify({
+            Title = "Neutralizer",
+            Content = killed .. " detecção(ões) neutralizada(s)",
+            Duration = 5,
+            Image = 4483362458
+        })
+    end
+})
+
 -- ===== CONFIG =====
 ConfigTab:CreateSection("Create Configuration")
 
@@ -449,86 +447,88 @@ ConfigTab:CreateButton({ Name = "Load Configuration",
     end })
 
 -- ============================================================
--- FASE 4: RENDER LOOP (só roda visual quando ativo)
+-- FASE 4: RENDER LOOP (idêntico ao original)
 -- ============================================================
 resume(create(function()
     RenderStepped:Connect(function()
-        -- Só processa target visualizer se estiver ativo
         if SilentAimSettings.ShowSilentAimTarget and SilentAimSettings.Enabled then
             local Target = getClosestPlayer()
             if Target then
-                local Root = Target.Parent and Target.Parent.PrimaryPart or Target
-                local ScreenPos, OnScreen = WorldToViewport(Camera, Root.Position)
-                mouse_box.Visible = OnScreen
-                mouse_box.Position = Vector2.new(ScreenPos.X, ScreenPos.Y)
+                local Root = Target.Parent.PrimaryPart or Target
+                local RootToViewportPoint, IsOnScreen = WorldToViewportPoint(Camera, Root.Position)
+                mouse_box.Visible = IsOnScreen
+                mouse_box.Position = Vector2.new(RootToViewportPoint.X, RootToViewportPoint.Y)
             else
                 mouse_box.Visible = false
+                mouse_box.Position = Vector2.new()
             end
-        elseif mouse_box.Visible then
+        else
             mouse_box.Visible = false
         end
 
-        -- Só atualiza FOV se estiver ativo
         if SilentAimSettings.FOVVisible then
             fov_circle.Visible = true
             fov_circle.Color = SilentAimSettings.FOVColor
             fov_circle.Position = getMousePosition()
-        elseif fov_circle.Visible then
+        else
             fov_circle.Visible = false
         end
     end)
 end))
 
 -- ============================================================
--- FASE 5: HOOKS DO SILENT AIM
+-- FASE 5: HOOKS (IDÊNTICOS AO ORIGINAL)
 -- ============================================================
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
     local Method = getnamecallmethod()
     local Arguments = {...}
     local self = Arguments[1]
+    local chance = CalculateChance(SilentAimSettings.HitChance)
 
-    if SilentAimSettings.Enabled and self == workspace and not checkcaller() then
-        if not CalculateChance(SilentAimSettings.HitChance) then
-            return oldNamecall(...)
-        end
-
+    if SilentAimSettings.Enabled and self == workspace and not checkcaller() and chance == true then
         if Method == "FindPartOnRayWithIgnoreList" and SilentAimSettings.SilentAimMethod == Method then
             if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithIgnoreList) then
+                local A_Ray = Arguments[2]
                 local HitPart = getClosestPlayer()
                 if HitPart then
-                    local A_Ray = Arguments[2]
-                    Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
                     return oldNamecall(unpack(Arguments))
                 end
             end
 
         elseif Method == "FindPartOnRayWithWhitelist" and SilentAimSettings.SilentAimMethod == Method then
             if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRayWithWhitelist) then
+                local A_Ray = Arguments[2]
                 local HitPart = getClosestPlayer()
                 if HitPart then
-                    local A_Ray = Arguments[2]
-                    Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
                     return oldNamecall(unpack(Arguments))
                 end
             end
 
-        elseif (Method == "FindPartOnRay" or Method == "findPartOnRay")
-            and SilentAimSettings.SilentAimMethod:lower() == Method:lower() then
+        elseif (Method == "FindPartOnRay" or Method == "findPartOnRay") and SilentAimSettings.SilentAimMethod:lower() == Method:lower() then
             if ValidateArguments(Arguments, ExpectedArguments.FindPartOnRay) then
+                local A_Ray = Arguments[2]
                 local HitPart = getClosestPlayer()
                 if HitPart then
-                    local A_Ray = Arguments[2]
-                    Arguments[2] = Ray.new(A_Ray.Origin, getDirection(A_Ray.Origin, HitPart.Position))
+                    local Origin = A_Ray.Origin
+                    local Direction = getDirection(Origin, HitPart.Position)
+                    Arguments[2] = Ray.new(Origin, Direction)
                     return oldNamecall(unpack(Arguments))
                 end
             end
 
         elseif Method == "Raycast" and SilentAimSettings.SilentAimMethod == Method then
             if ValidateArguments(Arguments, ExpectedArguments.Raycast) then
+                local A_Origin = Arguments[2]
                 local HitPart = getClosestPlayer()
                 if HitPart then
-                    Arguments[3] = getDirection(Arguments[2], HitPart.Position)
+                    Arguments[3] = getDirection(A_Origin, HitPart.Position)
                     return oldNamecall(unpack(Arguments))
                 end
             end
@@ -537,25 +537,22 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(...)
     return oldNamecall(...)
 end))
 
-local oldIndex
+local oldIndex = nil
 oldIndex = hookmetamethod(game, "__index", newcclosure(function(self, Index)
     if self == Mouse and not checkcaller() and SilentAimSettings.Enabled
-       and SilentAimSettings.SilentAimMethod == "Mouse.Hit/Target" then
+       and SilentAimSettings.SilentAimMethod == "Mouse.Hit/Target" and getClosestPlayer() then
         local HitPart = getClosestPlayer()
-        if HitPart then
-            if Index == "Target" or Index == "target" then
-                return HitPart
-            elseif Index == "Hit" or Index == "hit" then
-                return SilentAimSettings.MouseHitPrediction
-                    and (HitPart.CFrame + (HitPart.Velocity * PredictionAmount))
-                    or HitPart.CFrame
-            elseif Index == "X" or Index == "x" then
-                return self.X
-            elseif Index == "Y" or Index == "y" then
-                return self.Y
-            elseif Index == "UnitRay" then
-                return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
-            end
+        if Index == "Target" or Index == "target" then
+            return HitPart
+        elseif Index == "Hit" or Index == "hit" then
+            return ((SilentAimSettings.MouseHitPrediction and (HitPart.CFrame + (HitPart.Velocity * PredictionAmount)))
+                or (not SilentAimSettings.MouseHitPrediction and HitPart.CFrame))
+        elseif Index == "X" or Index == "x" then
+            return self.X
+        elseif Index == "Y" or Index == "y" then
+            return self.Y
+        elseif Index == "UnitRay" then
+            return Ray.new(self.Origin, (self.Hit - self.Origin).Unit)
         end
     end
     return oldIndex(self, Index)
@@ -566,7 +563,7 @@ end))
 -- ============================================================
 Rayfield:Notify({
     Title = "Carregado",
-    Content = "Adonis neutralizado: " .. totalKilled .. " | Silent Aim pronto",
+    Content = "Silent Aim pronto. Neutralizer é opcional (aba Extra).",
     Duration = 6,
     Image = 4483362458
 })
